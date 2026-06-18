@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id
+  name        String
+  nodesJson   String   @default("[]")
+  edgesJson   String   @default("[]")
+  settingsJson String  @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Asset {
+  id          String   @id
+  projectId   String?
+  type        String
+  title       String
+  preview     String
+  payloadJson String   @default("{}")
+  sourceJobId String?
+  createdAt   DateTime @default(now())
+}
+
+model GenerationJob {
+  id          String   @id
+  projectId   String?
+  kind        String
+  provider    String
+  model       String
+  prompt      String
+  status      String
+  assetsJson  String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  completedAt DateTime?
+}
+
+model ApiLog {
+  id           String   @id
+  projectId    String?
+  capability   String
+  provider     String
+  model        String
+  endpoint     String
+  ok           Boolean
+  status       Int
+  elapsedMs    Int
+  requestJson  String   @default("{}")
+  responseText String   @default("")
+  error        String?
+  createdAt    DateTime @default(now())
+}
+
+model PromptTemplate {
+  id        String   @id
+  projectId String?
+  scope     String   @default("project")
+  kind      String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApiCredential {
+  provider  String   @id
+  apiKey    String
+  baseUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ModelCredential {
+  id         String   @id
+  capability String
+  label      String
+  provider   String
+  model      String
+  apiKey     String
+  baseUrl    String?
+  modelsPath String?  @default("/models")
+  generatePath String?
+  statusPath String?
+  requestTemplateJson String?
+  responseContentPath String?
+  responseUrlPath String?
+  responseTaskIdPath String?
+  responseStatusPath String?
+  responseErrorPath String?
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
