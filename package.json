@@ -5,9 +5,9 @@
   "author": "Xiaoqing",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_GITHUB_USERNAME/xiaoqing-ai-video-house.git"
+    "url": "https://github.com/eatguoking/xiaoqing-ai-video-house.git"
   },
-  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/xiaoqing-ai-video-house#readme",
+  "homepage": "https://github.com/eatguoking/xiaoqing-ai-video-house#readme",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {
@@ -71,7 +71,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "YOUR_GITHUB_USERNAME",
+        "owner": "eatguoking",
         "repo": "xiaoqing-ai-video-house",
         "releaseType": "release"
       }

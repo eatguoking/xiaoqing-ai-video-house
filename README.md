@@ -38,7 +38,7 @@ npx electron-builder --win nsis --publish never
 ## GitHub 自动更新发布
 
 1. 在 GitHub 创建仓库，例如 `xiaoqing-ai-video-house`。
-2. 把 `package.json` 里的 `YOUR_GITHUB_USERNAME` 替换成你的 GitHub 用户名或组织名。
+2. 确认 `package.json` 里的 GitHub owner 是你的用户名或组织名，当前配置为 `eatguoking`。
 3. 每次发布前升级 `package.json` 的 `version`，例如 `0.1.0` 改为 `0.1.1`。
 4. 设置 GitHub token：
 
