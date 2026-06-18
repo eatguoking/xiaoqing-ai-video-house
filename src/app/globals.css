@@ -3634,3 +3634,121 @@ body[data-theme="dark"] .library-item.is-active {
   cursor: progress;
   opacity: 0.68;
 }
+
+/* Inspector overflow guard: keep the right editing rail vertical-only. */
+.right-panel {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.right-panel *,
+.right-panel *::before,
+.right-panel *::after {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.inspector-section,
+.field,
+.model-picker,
+.workflow-panel,
+.ai-input-section {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.inspector-head strong,
+.inspector-head small,
+.field span,
+.field-help,
+.model-note,
+.selected-model-line,
+.model-source-title,
+.workflow-upstream span,
+.workflow-empty {
+  overflow-wrap: anywhere;
+}
+
+.inspector-actions,
+.workflow-actions,
+.parameter-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inspector-actions button,
+.workflow-actions button,
+.workflow-wide-action,
+.generate-button,
+.model-picker-head button,
+.model-empty-state button,
+.model-filter-tags button {
+  min-width: 0;
+  white-space: normal;
+}
+
+.model-picker-head,
+.workflow-upstream {
+  gap: 8px;
+}
+
+.model-picker-head > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.model-search {
+  min-width: 0;
+}
+
+.model-search input,
+.field input,
+.field textarea,
+.parameter-grid input,
+.parameter-grid select {
+  width: 100%;
+  min-width: 0;
+}
+
+.model-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.live-model-list {
+  overflow-x: hidden;
+}
+
+.model-option {
+  grid-template-columns: 28px minmax(0, 1fr);
+  max-width: 100%;
+}
+
+.model-option strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-tags {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.model-tags em {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  .inspector-actions,
+  .workflow-actions,
+  .parameter-grid {
+    grid-template-columns: 1fr;
+  }
+}
