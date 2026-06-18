@@ -38,8 +38,16 @@ jobs:
         env:
           DATABASE_URL: file:./prisma/app-template.db
 
-      - name: Build and publish Windows installer
-        run: npx electron-builder --win nsis --publish always
+      - name: Build Windows installer
+        run: npx electron-builder --win nsis --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DATABASE_URL: file:./prisma/app-template.db
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/xiaoqing-ai-video-house-setup-*.exe
+            release/xiaoqing-ai-video-house-setup-*.exe.blockmap
+            release/latest.yml
+          generate_release_notes: true
