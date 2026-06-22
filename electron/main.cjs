@@ -216,6 +216,8 @@ async function startNextServer() {
   log(`User data: ${data.userData}`);
   log(`DB: ${data.dbPath}`);
   log(`Uploads: ${data.uploadDir}`);
+  process.chdir(root);
+  log(`Working directory: ${process.cwd()}`);
 
   process.env.NODE_ENV = app.isPackaged ? "production" : "development";
   process.env.DATABASE_URL = fileUrlForPrisma(data.dbPath);
@@ -266,6 +268,25 @@ function createWindow(url) {
   mainWindow.removeMenu();
   mainWindow.loadURL(url);
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    if (targetUrl.startsWith(url) && new URL(targetUrl).pathname === "/image-editor") {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 1320,
+          height: 860,
+          minWidth: 980,
+          minHeight: 680,
+          title: `${appName} - 修图`,
+          icon: appIconPath(),
+          backgroundColor: "#eef1f5",
+          webPreferences: {
+            preload: path.join(__dirname, "preload.cjs"),
+            contextIsolation: true,
+            nodeIntegration: false
+          }
+        }
+      };
+    }
     shell.openExternal(targetUrl);
     return { action: "deny" };
   });

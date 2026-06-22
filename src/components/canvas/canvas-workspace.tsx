@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   Background,
   Controls,
@@ -277,7 +277,7 @@ type JobRecord = {
   kind: "image" | "video";
   status: "queued" | "running" | "succeeded" | "failed";
   model: string;
-  assets?: Array<{ id: string; type: string; title: string; preview: string; url?: string }>;
+  assets?: Array<{ id: string; type: string; title: string; preview: string; url?: string; payload?: Asset["payload"] }>;
   error?: string;
 };
 
@@ -336,6 +336,15 @@ type PromptTemplateRecord = {
 };
 
 const noModelLabel = "No external model";
+const editedImageEventType = "xiaoqing:image-edited";
+const editedImageStorageKey = "xiaoqing.imageEdited";
+
+type EditedImageEvent = {
+  type?: string;
+  nodeId?: string;
+  asset?: Asset;
+  savedAt?: number;
+};
 
 const initialNodes: Node<GenerationNodeData>[] = [
   {
@@ -432,6 +441,10 @@ function assetUrl(asset: Asset) {
 function assetPatch(asset: Asset): Partial<GenerationNodeData> {
   const url = assetUrl(asset);
   const text = assetText(asset);
+  const imageEditMode = asset.payload?.imageEditMode === true;
+  const imageEditPrompt = typeof asset.payload?.prompt === "string" ? asset.payload.prompt : text;
+  const imageEditReferenceUrl =
+    typeof asset.payload?.referenceImageUrl === "string" ? asset.payload.referenceImageUrl : url;
 
   return {
     status: "succeeded",
@@ -439,8 +452,16 @@ function assetPatch(asset: Asset): Partial<GenerationNodeData> {
     assetId: asset.id,
     assetUrl: url || undefined,
     assetPreview: asset.preview,
-    assetContent: text
+    assetContent: text,
+    imageEditMode: imageEditMode ? true : undefined,
+    imageEditPrompt: imageEditMode ? imageEditPrompt : undefined,
+    imageEditReferenceUrl: imageEditMode ? imageEditReferenceUrl : undefined
   };
+}
+
+function videoSourceUrl(node?: Node<GenerationNodeData>) {
+  if (!node) return "";
+  return node.data.kind === "image" ? node.data.assetUrl ?? "" : "";
 }
 
 const nodeDefaults: Record<NodeKind, Pick<GenerationNodeData, "kind" | "model" | "summary">> = {
@@ -940,6 +961,7 @@ export function CanvasWorkspace() {
   const [batchRunning, setBatchRunning] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Unsaved");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const lastEditedImageSavedAtRef = useRef(0);
   const t = uiText[locale];
 
   const selectedNode = useMemo(
@@ -954,6 +976,16 @@ export function CanvasWorkspace() {
       .map((edge) => nodeOutputText(nodes.find((node) => node.id === edge.source)))
       .filter(Boolean)
       .join("\n\n");
+  }, [edges, nodes, selectedNode]);
+
+  const sourceImageUrl = useMemo(() => {
+    if (!selectedNode || selectedNode.data.kind !== "video") return "";
+    if (selectedNode.data.sourceAssetUrl) return selectedNode.data.sourceAssetUrl;
+
+    return edges
+      .filter((edge) => edge.target === selectedNode.id)
+      .map((edge) => videoSourceUrl(nodes.find((node) => node.id === edge.source)))
+      .find(Boolean) ?? "";
   }, [edges, nodes, selectedNode]);
 
   const selectedInput = selectedNode?.data.input ?? prompt;
@@ -1622,6 +1654,18 @@ export function CanvasWorkspace() {
     });
   }, []);
 
+  const handleOpenImageEditor = useCallback(() => {
+    if (!selectedNode || selectedNode.data.kind !== "image" || !selectedNode.data.assetUrl) return;
+    const params = new URLSearchParams({
+      projectId,
+      nodeId: selectedNode.id,
+      assetId: selectedNode.data.assetId ?? selectedNode.id,
+      title: selectedNode.data.title,
+      imageUrl: selectedNode.data.assetUrl
+    });
+    window.open(`/image-editor?${params.toString()}`, "_blank", "width=1320,height=860");
+  }, [projectId, selectedNode]);
+
   const handleSavePreviewAsset = useCallback(
     async (asset: Asset, draftText: string) => {
       const nextPreview = draftText.trim() ? draftText.trim().slice(0, 180) : asset.preview;
@@ -1688,8 +1732,68 @@ export function CanvasWorkspace() {
     [updateNodeData]
   );
 
+  const applyEditedImageEvent = useCallback(
+    (data: EditedImageEvent | null | undefined) => {
+      if (data?.type !== editedImageEventType || !data.nodeId || !data.asset) return;
+      const savedAt = Number(data.savedAt ?? 0);
+      if (savedAt && savedAt <= lastEditedImageSavedAtRef.current) return;
+      if (savedAt) lastEditedImageSavedAtRef.current = savedAt;
+
+      setAssets((current) => [data.asset!, ...current.filter((asset) => asset.id !== data.asset!.id)]);
+      applyAssetToNode(data.nodeId, data.asset);
+      setSelectedNodeId(data.nodeId);
+      markDirty();
+      window.localStorage.removeItem(editedImageStorageKey);
+    },
+    [applyAssetToNode, markDirty]
+  );
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      applyEditedImageEvent(event.data as EditedImageEvent);
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== editedImageStorageKey || !event.newValue) return;
+      try {
+        applyEditedImageEvent(JSON.parse(event.newValue) as EditedImageEvent);
+      } catch {
+        // Ignore malformed cross-window notifications.
+      }
+    };
+
+    const handleFocus = () => {
+      const raw = window.localStorage.getItem(editedImageStorageKey);
+      if (!raw) return;
+      try {
+        applyEditedImageEvent(JSON.parse(raw) as EditedImageEvent);
+      } catch {
+        // Ignore malformed saved notifications.
+      }
+    };
+
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel(editedImageEventType) : null;
+    channel?.addEventListener("message", (event) => applyEditedImageEvent(event.data as EditedImageEvent));
+    window.addEventListener("message", handleMessage);
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      channel?.close();
+      window.removeEventListener("message", handleMessage);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [applyEditedImageEvent]);
+
   const handleAssetsUploaded = useCallback((uploadedAssets: Asset[]) => {
     setAssets((current) => [...uploadedAssets, ...current]);
+  }, []);
+
+  const handleAssetsDeleted = useCallback((assetIds: string[]) => {
+    const deleted = new Set(assetIds);
+    setAssets((current) => current.filter((asset) => !deleted.has(asset.id)));
+    setPreviewAsset((current) => (current && deleted.has(current.id) ? null : current));
   }, []);
 
   const handleCreateLibraryAsset = useCallback(
@@ -1900,7 +2004,10 @@ export function CanvasWorkspace() {
     if (!selectedNode) return;
 
     const kind = selectedNode.data.kind;
-    const nodeInput = selectedNode.data.input?.trim() || upstreamText || prompt;
+    const isImageEditRun = kind === "image" && selectedNode.data.imageEditMode === true;
+    const nodeInput = isImageEditRun
+      ? selectedNode.data.imageEditPrompt || selectedNode.data.assetContent || selectedNode.data.summary
+      : selectedNode.data.input?.trim() || upstreamText || prompt;
     const selectedModel = findModel(selectedModelId, models);
     if (!selectedModelId || !selectedModel) {
       updateNodeStatus(selectedNode.id, "failed", "Configure and select an external model first.", noModelLabel);
@@ -1946,9 +2053,34 @@ export function CanvasWorkspace() {
     const endpoint = kind === "video" ? "/api/video/generate" : "/api/image/generate";
     const mediaInput =
       kind === "video"
-        ? { prompt: nodeInput, imageUrl: selectedNode.data.sourceAssetUrl }
-        : { prompt: nodeInput };
-    updateNodeStatus(selectedNode.id, "queued", "Job submitted. Waiting for the external API...", displayModel);
+        ? {
+            prompt: nodeInput,
+            imageUrl: sourceImageUrl,
+            ratio: selectedNode.data.ratio ?? "9:16",
+            duration: selectedNode.data.duration ?? 5,
+            camera: selectedNode.data.camera ?? "slow push-in",
+            variants: selectedNode.data.variants ?? 1
+          }
+        : {
+            prompt: nodeInput,
+            ...(isImageEditRun
+              ? {
+                  imageUrl: selectedNode.data.imageEditReferenceUrl || selectedNode.data.assetUrl,
+                  editMode: true
+                }
+              : {})
+          };
+    if (kind === "video" && sourceImageUrl && selectedNode.data.sourceAssetUrl !== sourceImageUrl) {
+      updateNodeData(selectedNode.id, { sourceAssetUrl: sourceImageUrl });
+    }
+    updateNodeStatus(
+      selectedNode.id,
+      "queued",
+      isImageEditRun
+        ? "Image edit brief submitted. Reading the saved edit canvas..."
+        : "Job submitted. Waiting for the external API...",
+      displayModel
+    );
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1969,7 +2101,7 @@ export function CanvasWorkspace() {
       return;
     }
     pollJob(job, selectedNode.id);
-  }, [applyAssetToNode, models, pollJob, projectId, prompt, selectedModelId, selectedNode, updateNodeData, updateNodeStatus, upstreamText]);
+  }, [applyAssetToNode, models, pollJob, projectId, prompt, selectedModelId, selectedNode, sourceImageUrl, updateNodeData, updateNodeStatus, upstreamText]);
 
   return (
     <main className="workspace-shell">
@@ -2111,6 +2243,7 @@ export function CanvasWorkspace() {
           onCreateImageNodesFromStoryboard={handleCreateImageNodesFromStoryboard}
           onGenerateImageChildren={handleGenerateImageChildren}
           onOpenNodePreview={() => selectedNode && openNodePreview(selectedNode)}
+          onOpenImageEditor={handleOpenImageEditor}
           onOpenModelConfig={() => setSettingsOpen(true)}
           locale={locale}
         />
@@ -2121,6 +2254,7 @@ export function CanvasWorkspace() {
         projectId={projectId}
         onOpenAsset={setPreviewAsset}
         onAssetsUploaded={handleAssetsUploaded}
+        onAssetsDeleted={handleAssetsDeleted}
         locale={locale}
       />
       <ProjectModal

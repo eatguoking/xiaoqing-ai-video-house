@@ -130,6 +130,10 @@ function videoAsset(input: {
   model: string;
   videoUrl: string;
   imageUrl?: string;
+  ratio?: string;
+  duration?: number;
+  camera?: string;
+  variants?: number;
   projectId?: string | null;
   raw?: unknown;
 }) {
@@ -143,6 +147,10 @@ function videoAsset(input: {
     videoUrl: input.videoUrl,
     prompt: input.prompt,
     imageUrl: input.imageUrl ?? "",
+    ratio: input.ratio ?? "9:16",
+    duration: input.duration ?? 5,
+    camera: input.camera ?? "slow push-in",
+    variants: input.variants ?? 1,
     provider: input.provider,
     model: input.model,
     raw: input.raw
@@ -290,6 +298,10 @@ export async function GET(
   const videoUrl = readVideoUrl(payload, selected.responseUrlPath);
   const prompt = stringValue(parsed.meta.prompt) || storedJob.prompt;
   const imageUrl = stringValue(parsed.meta.imageUrl);
+  const ratio = stringValue(parsed.meta.ratio) || "9:16";
+  const duration = Number(parsed.meta.duration ?? 5) || 5;
+  const camera = stringValue(parsed.meta.camera) || "slow push-in";
+  const variants = Number(parsed.meta.variants ?? 1) || 1;
   const assets =
     videoUrl && (status === "succeeded" || status === "running")
       ? [
@@ -300,6 +312,10 @@ export async function GET(
             model: storedJob.model,
             videoUrl,
             imageUrl,
+            ratio,
+            duration,
+            camera,
+            variants,
             projectId: storedJob.projectId,
             raw: payload
           })

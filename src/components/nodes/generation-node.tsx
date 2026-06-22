@@ -16,6 +16,13 @@ export type GenerationNodeData = {
   assetUrl?: string;
   assetPreview?: string;
   assetContent?: string;
+  imageEditMode?: boolean;
+  imageEditPrompt?: string;
+  imageEditReferenceUrl?: string;
+  ratio?: string;
+  variants?: number;
+  duration?: number;
+  camera?: string;
 };
 
 const iconMap = {
@@ -56,7 +63,7 @@ export function GenerationNode({ data, selected }: NodeProps) {
       {nodeData.kind === "voice" && nodeData.assetUrl ? (
         <audio className="node-preview-audio" src={nodeData.assetUrl} controls />
       ) : nodeData.kind === "video" && nodeData.assetUrl ? (
-        <video className="node-preview-video" src={nodeData.assetUrl} muted playsInline />
+        <video className="node-preview-video" src={nodeData.assetUrl} muted playsInline controls />
       ) : nodeData.kind === "video" && nodeData.sourceAssetUrl ? (
         <img className="node-preview-image" src={nodeData.sourceAssetUrl} alt={`${nodeData.title} source`} />
       ) : nodeData.assetUrl ? (

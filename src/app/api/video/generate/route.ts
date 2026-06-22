@@ -117,10 +117,18 @@ function requestBody(input: {
   model: string;
   prompt: string;
   imageUrl: string;
+  ratio: string;
+  duration: number;
+  camera: string;
+  variants: number;
 }) {
   const defaults = {
     model: input.model,
     prompt: input.prompt,
+    ratio: input.ratio,
+    duration: input.duration,
+    camera: input.camera,
+    n: input.variants,
     ...(input.imageUrl
       ? { image_url: input.imageUrl, imageUrl: input.imageUrl, first_frame_image: input.imageUrl }
       : {})
@@ -133,10 +141,12 @@ function requestBody(input: {
       model: input.model,
       prompt: input.prompt,
       imageUrl: input.imageUrl,
-      duration: 5,
-      ratio: "9:16",
+      duration: input.duration,
+      ratio: input.ratio,
       size: "1024x1792",
-      count: 1
+      count: input.variants,
+      camera: input.camera,
+      variants: input.variants
     });
   } catch (error) {
     throw new Error(`Request template JSON is invalid: ${error instanceof Error ? error.message : String(error)}`);
@@ -150,6 +160,10 @@ function videoAsset(input: {
   model: string;
   videoUrl: string;
   imageUrl?: string;
+  ratio?: string;
+  duration?: number;
+  camera?: string;
+  variants?: number;
   projectId?: string | null;
   raw?: unknown;
 }) {
@@ -163,6 +177,10 @@ function videoAsset(input: {
     videoUrl: input.videoUrl,
     prompt: input.prompt,
     imageUrl: input.imageUrl ?? "",
+    ratio: input.ratio ?? "9:16",
+    duration: input.duration ?? 5,
+    camera: input.camera ?? "slow push-in",
+    variants: input.variants ?? 1,
     provider: input.provider,
     model: input.model,
     raw: input.raw
@@ -214,13 +232,21 @@ export async function POST(request: Request) {
 
   const prompt = body.input?.prompt || body.prompt || "slow push-in, emotional close-up, vertical video";
   const imageUrl = body.input?.imageUrl || body.imageUrl || "";
+  const ratio = String(body.input?.ratio || body.ratio || "9:16");
+  const duration = Number(body.input?.duration || body.duration || 5) || 5;
+  const camera = String(body.input?.camera || body.camera || "slow push-in");
+  const variants = Number(body.input?.variants || body.variants || 1) || 1;
   const projectId = String(body.projectId ?? body.input?.projectId ?? "").trim() || null;
   const endpoint = makeUrl(selected.baseUrl, selected.generatePath || "/videos/generations");
   const payloadBody = requestBody({
     template: selected.requestTemplateJson,
     model: runtimeModel,
     prompt,
-    imageUrl
+    imageUrl,
+    ratio,
+    duration,
+    camera,
+    variants
   });
   const startedAt = Date.now();
 
@@ -334,6 +360,10 @@ export async function POST(request: Request) {
       model: runtimeModel,
         videoUrl,
         imageUrl,
+        ratio,
+        duration,
+        camera,
+        variants,
         projectId,
         raw: payload
       });
@@ -389,6 +419,10 @@ export async function POST(request: Request) {
     statusUrl: readStatusUrl(payload) || selected.statusPath || "",
     prompt,
     imageUrl,
+    ratio,
+    duration,
+    camera,
+    variants,
     raw: payload
   };
 

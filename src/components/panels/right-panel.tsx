@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Node } from "@xyflow/react";
-import { ArrowRight, Copy, Images, ListPlus, RefreshCw, Search, Trash2, Wand2 } from "lucide-react";
+import { ArrowRight, Copy, Images, ListPlus, Paintbrush, RefreshCw, Search, Trash2, Wand2 } from "lucide-react";
 import type { GenerationNodeData } from "@/components/nodes/generation-node";
 import type { ExternalModelOption, Locale } from "@/components/canvas/canvas-workspace";
 
@@ -34,6 +34,7 @@ type Props = {
   onCreateImageNodesFromStoryboard: () => void;
   onGenerateImageChildren: () => void;
   onOpenNodePreview: () => void;
+  onOpenImageEditor: () => void;
   onOpenModelConfig: () => void;
 };
 
@@ -42,6 +43,7 @@ const labels = {
     inspector: "检查器",
     currentNode: "当前节点",
     outputPreview: "输出预览",
+    editImage: "修图",
     noNode: "未选择节点",
     hint: "右侧输入需求并点击生成；底部资产区显示 AI 输出结果。",
     copy: "复制",
@@ -80,6 +82,7 @@ const labels = {
     inspector: "Inspector",
     currentNode: "Current Node",
     outputPreview: "Output Preview",
+    editImage: "Edit image",
     noNode: "No node selected",
     hint: "Enter requirements on the right and generate; AI outputs appear in the bottom Assets area.",
     copy: "Copy",
@@ -173,6 +176,7 @@ export function RightPanel({
   onCreateImageNodesFromStoryboard,
   onGenerateImageChildren,
   onOpenNodePreview,
+  onOpenImageEditor,
   onOpenModelConfig
 }: Props) {
   const t = labels[locale];
@@ -191,6 +195,11 @@ export function RightPanel({
     data?.kind === "script" || data?.kind === "storyboard" || data?.kind === "image";
   const canSplitStoryboard = data?.kind === "storyboard" && Boolean(data.assetContent || data.assetPreview || prompt);
   const canGenerateImageChildren = data?.kind === "storyboard" && imageChildCount > 0 && !batchRunning;
+  const canEditImage = data?.kind === "image" && Boolean(data.assetUrl);
+  const nodeRatio = data?.ratio ?? "9:16";
+  const nodeVariants = data?.variants ?? 1;
+  const nodeDuration = data?.duration ?? 5;
+  const nodeCamera = data?.camera ?? "slow push-in";
 
   const filteredOptions = useMemo(() => {
     const query = modelQuery.trim().toLowerCase();
@@ -247,13 +256,21 @@ export function RightPanel({
         <section className="inspector-section output-preview-section">
           <div className="panel-section-title">{t.outputPreview}</div>
           {data?.assetUrl ? (
-            <button className="node-side-preview" type="button" onClick={onOpenNodePreview}>
-              {data.kind === "video" ? (
-                <video src={data.assetUrl} muted playsInline />
-              ) : (
-                <img src={data.assetUrl} alt={data.title} />
-              )}
-            </button>
+            <>
+              <button className="node-side-preview" type="button" onClick={onOpenNodePreview}>
+                {data.kind === "video" ? (
+                  <video src={data.assetUrl} muted playsInline />
+                ) : (
+                  <img src={data.assetUrl} alt={data.title} />
+                )}
+              </button>
+              {canEditImage ? (
+                <button className="image-edit-button" type="button" onClick={onOpenImageEditor}>
+                  <Paintbrush size={15} />
+                  {t.editImage}
+                </button>
+              ) : null}
+            </>
           ) : null}
 
           {!data?.assetUrl && data?.kind === "video" && data.sourceAssetUrl ? (
@@ -394,7 +411,11 @@ export function RightPanel({
         <div className="parameter-grid">
           <label>
             {t.ratio}
-            <select defaultValue="9:16">
+            <select
+              value={nodeRatio}
+              onChange={(event) => onNodeDataChange({ ratio: event.target.value })}
+              disabled={!selectedNode}
+            >
               <option>9:16</option>
               <option>16:9</option>
               <option>1:1</option>
@@ -402,15 +423,33 @@ export function RightPanel({
           </label>
           <label>
             {t.variants}
-            <input defaultValue="3" type="number" min="1" max="8" />
+            <input
+              value={nodeVariants}
+              type="number"
+              min="1"
+              max="8"
+              disabled={!selectedNode}
+              onChange={(event) => onNodeDataChange({ variants: Number(event.target.value) || 1 })}
+            />
           </label>
           <label>
             {t.duration}
-            <input defaultValue="5" type="number" min="1" max="15" />
+            <input
+              value={nodeDuration}
+              type="number"
+              min="1"
+              max="15"
+              disabled={!selectedNode}
+              onChange={(event) => onNodeDataChange({ duration: Number(event.target.value) || 5 })}
+            />
           </label>
           <label>
             {t.camera}
-            <select defaultValue="slow push-in">
+            <select
+              value={nodeCamera}
+              onChange={(event) => onNodeDataChange({ camera: event.target.value })}
+              disabled={!selectedNode}
+            >
               <option>slow push-in</option>
               <option>static</option>
               <option>handheld</option>

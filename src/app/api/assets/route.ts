@@ -1,12 +1,56 @@
 import { NextResponse } from "next/server";
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { prisma } from "@/lib/db";
 
-function parsePayload(value: string) {
+export const runtime = "nodejs";
+
+const uploadRoot = process.env.APP_UPLOAD_DIR || path.join(process.cwd(), "public", "uploads");
+
+function parsePayload(value: string): Record<string, unknown> {
   try {
     return JSON.parse(value);
   } catch {
     return {};
   }
+}
+
+function localFilePathFromUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+
+  const pathname = (() => {
+    try {
+      return new URL(value, "http://local").pathname;
+    } catch {
+      return value;
+    }
+  })();
+  const decoded = decodeURIComponent(pathname);
+
+  if (decoded.startsWith("/uploads/")) {
+    const root = path.resolve(process.cwd(), "public", "uploads");
+    const target = path.resolve(root, ...decoded.slice("/uploads/".length).split("/").filter(Boolean));
+    return target.startsWith(`${root}${path.sep}`) ? target : null;
+  }
+
+  if (decoded.startsWith("/api/local-files/")) {
+    const root = path.resolve(uploadRoot);
+    const target = path.resolve(root, ...decoded.slice("/api/local-files/".length).split("/").filter(Boolean));
+    return target.startsWith(`${root}${path.sep}`) ? target : null;
+  }
+
+  return null;
+}
+
+function assetLocalFilePaths(payload: Record<string, unknown>) {
+  const urls = [
+    payload.url,
+    payload.videoUrl,
+    payload.audioUrl,
+    payload.thumbnailUrl,
+    payload.referenceImageUrl
+  ];
+  return Array.from(new Set(urls.map(localFilePathFromUrl).filter((item): item is string => Boolean(item))));
 }
 
 export async function GET(request: Request) {
@@ -90,4 +134,55 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ saved: saved.length });
+}
+
+export async function DELETE(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  const projectId = String(body.projectId ?? "").trim();
+  const rawIds: unknown[] = Array.isArray(body.ids) ? body.ids : [];
+  const ids: string[] = Array.from(
+    new Set(rawIds.map((id) => String(id ?? "").trim()).filter((id): id is string => Boolean(id)))
+  );
+
+  if (!projectId || ids.length === 0) {
+    return NextResponse.json({ error: "projectId and asset ids are required." }, { status: 400 });
+  }
+
+  const assets = await prisma.asset.findMany({
+    where: {
+      projectId,
+      id: { in: ids }
+    }
+  });
+  const deletableIds = assets.map((asset) => asset.id);
+
+  if (deletableIds.length === 0) {
+    return NextResponse.json({ deleted: 0, ids: [], filesDeleted: 0, fileErrors: 0 });
+  }
+
+  await prisma.asset.deleteMany({
+    where: {
+      projectId,
+      id: { in: deletableIds }
+    }
+  });
+
+  let filesDeleted = 0;
+  let fileErrors = 0;
+  const paths = assets.flatMap((asset) => assetLocalFilePaths(parsePayload(asset.payloadJson)));
+  for (const filePath of Array.from(new Set(paths))) {
+    try {
+      await unlink(filePath);
+      filesDeleted += 1;
+    } catch {
+      fileErrors += 1;
+    }
+  }
+
+  return NextResponse.json({
+    deleted: deletableIds.length,
+    ids: deletableIds,
+    filesDeleted,
+    fileErrors
+  });
 }

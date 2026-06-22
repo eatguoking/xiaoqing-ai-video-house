@@ -34,6 +34,7 @@ type Props = {
   }>;
   onOpenAsset: (asset: Asset) => void;
   onAssetsUploaded: (assets: Asset[]) => void;
+  onAssetsDeleted: (assetIds: string[]) => void;
   projectId: string;
 };
 
@@ -51,6 +52,14 @@ const labels = {
     video: "视频",
     audio: "音频",
     upload: "上传",
+    batchClean: "批量清理",
+    selectAll: "全选当前",
+    clearSelected: "清理选中",
+    clearFiltered: "清理当前筛选",
+    cancel: "取消",
+    selected: "已选",
+    clearing: "清理中...",
+    cleanConfirm: "确定要清理这些资产吗？会从当前项目资产库中删除，并清理本地文件。",
     empty: "AI 生成结果会显示在这里",
     title: "点击预览，拖拽到画布"
   },
@@ -67,15 +76,27 @@ const labels = {
     video: "Video",
     audio: "Audio",
     upload: "Upload",
+    batchClean: "Batch clean",
+    selectAll: "Select visible",
+    clearSelected: "Clean selected",
+    clearFiltered: "Clean filtered",
+    cancel: "Cancel",
+    selected: "selected",
+    clearing: "Cleaning...",
+    cleanConfirm: "Clean these assets? They will be removed from this project library and local files will be deleted.",
     empty: "AI generated results will appear here",
     title: "Click to preview. Drag to canvas."
   }
 } as const;
 
-export function BottomPanel({ locale, assets, jobs, onOpenAsset, onAssetsUploaded, projectId }: Props) {
+export function BottomPanel({ locale, assets, jobs, onOpenAsset, onAssetsUploaded, onAssetsDeleted, projectId }: Props) {
   const t = labels[locale];
   const [assetQuery, setAssetQuery] = useState("");
   const [assetType, setAssetType] = useState("all");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(() => new Set());
+  const [cleaning, setCleaning] = useState(false);
+  const [message, setMessage] = useState("");
 
   const filteredAssets = useMemo(() => {
     const query = assetQuery.trim().toLowerCase();
@@ -88,8 +109,69 @@ export function BottomPanel({ locale, assets, jobs, onOpenAsset, onAssetsUploade
   }, [assetQuery, assetType, assets]);
 
   const handleDragStart = (event: React.DragEvent<HTMLDivElement>, asset: Asset) => {
+    if (selectionMode) {
+      event.preventDefault();
+      return;
+    }
     event.dataTransfer.setData("application/x-ai-video-asset", JSON.stringify(asset));
     event.dataTransfer.effectAllowed = "copy";
+  };
+
+  const selectedCount = useMemo(
+    () => assets.filter((asset) => selectedAssetIds.has(asset.id)).length,
+    [assets, selectedAssetIds]
+  );
+
+  const toggleAssetSelected = (assetId: string) => {
+    setSelectedAssetIds((current) => {
+      const next = new Set(current);
+      if (next.has(assetId)) {
+        next.delete(assetId);
+      } else {
+        next.add(assetId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedAssetIds((current) => {
+      const next = new Set(current);
+      filteredAssets.forEach((asset) => next.add(asset.id));
+      return next;
+    });
+  };
+
+  const cleanAssets = async (ids: string[]) => {
+    const uniqueIds = Array.from(new Set(ids)).filter(Boolean);
+    if (!uniqueIds.length || cleaning) return;
+    if (!window.confirm(t.cleanConfirm)) return;
+
+    setCleaning(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/assets", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, ids: uniqueIds })
+      });
+      const result = (await response.json().catch(() => ({}))) as { ids?: string[]; error?: string };
+      if (!response.ok) {
+        throw new Error(result.error || "Clean assets failed.");
+      }
+      const deletedIds = Array.isArray(result.ids) ? result.ids : uniqueIds;
+      onAssetsDeleted(deletedIds);
+      setSelectedAssetIds((current) => {
+        const next = new Set(current);
+        deletedIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setMessage("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCleaning(false);
+    }
   };
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -147,6 +229,51 @@ export function BottomPanel({ locale, assets, jobs, onOpenAsset, onAssetsUploade
               <option value="video">{t.video}</option>
               <option value="voice">{t.audio}</option>
             </select>
+            {selectionMode ? (
+              <>
+                <span className="asset-clean-count">{selectedCount} {t.selected}</span>
+                <button className="asset-action-button" type="button" onClick={selectAllFiltered} disabled={!filteredAssets.length || cleaning}>
+                  {t.selectAll}
+                </button>
+                <button
+                  className="asset-action-button danger"
+                  type="button"
+                  onClick={() => cleanAssets(Array.from(selectedAssetIds))}
+                  disabled={!selectedCount || cleaning}
+                >
+                  {cleaning ? t.clearing : t.clearSelected}
+                </button>
+                <button
+                  className="asset-action-button danger"
+                  type="button"
+                  onClick={() => cleanAssets(filteredAssets.map((asset) => asset.id))}
+                  disabled={!filteredAssets.length || cleaning}
+                >
+                  {t.clearFiltered}
+                </button>
+                <button
+                  className="asset-action-button"
+                  type="button"
+                  onClick={() => {
+                    setSelectionMode(false);
+                    setSelectedAssetIds(new Set());
+                    setMessage("");
+                  }}
+                  disabled={cleaning}
+                >
+                  {t.cancel}
+                </button>
+              </>
+            ) : (
+              <button
+                className="asset-action-button"
+                type="button"
+                onClick={() => setSelectionMode(true)}
+                disabled={!assets.length}
+              >
+                {t.batchClean}
+              </button>
+            )}
           </div>
           <label className="asset-upload-button">
             {t.upload}
@@ -158,21 +285,32 @@ export function BottomPanel({ locale, assets, jobs, onOpenAsset, onAssetsUploade
             />
           </label>
         </div>
+        {message ? <div className="asset-clean-message">{message}</div> : null}
         <div className="asset-list">
           {filteredAssets.length === 0 ? (
             <span className="empty-text">{t.empty}</span>
           ) : (
             filteredAssets.map((asset) => (
               <div
-                className={`asset-card asset-${asset.type}`}
-                draggable
+                className={`asset-card asset-${asset.type}${selectionMode ? " is-selecting" : ""}${selectedAssetIds.has(asset.id) ? " is-selected" : ""}`}
+                draggable={!selectionMode}
                 key={asset.id}
-                onClick={() => onOpenAsset(asset)}
+                onClick={() => (selectionMode ? toggleAssetSelected(asset.id) : onOpenAsset(asset))}
                 onDragStart={(event) => handleDragStart(event, asset)}
                 role="button"
                 tabIndex={0}
                 title={t.title}
               >
+                {selectionMode ? (
+                  <input
+                    className="asset-select-check"
+                    type="checkbox"
+                    checked={selectedAssetIds.has(asset.id)}
+                    onChange={() => toggleAssetSelected(asset.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    aria-label={`${t.selected}: ${asset.title}`}
+                  />
+                ) : null}
                 {asset.type === "image" && asset.url ? (
                   <img className="asset-thumb" src={asset.url} alt={asset.title} />
                 ) : null}
