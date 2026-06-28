@@ -6,6 +6,7 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  ViewportPortal,
   addEdge,
   useEdgesState,
   useNodesState,
@@ -651,12 +652,16 @@ function pipelineBounds(nodes: Node<GenerationNodeData>[], pipeline: ActivePipel
   const pipelineNodes = nodes.filter((node) => ids.has(node.id));
   if (!pipelineNodes.length) return null;
 
-  const nodeWidth = 270;
-  const nodeHeight = 190;
+  const defaultNodeWidth = 270;
+  const defaultNodeHeight = 190;
   const minX = Math.min(...pipelineNodes.map((node) => node.position.x));
   const minY = Math.min(...pipelineNodes.map((node) => node.position.y));
-  const maxX = Math.max(...pipelineNodes.map((node) => node.position.x + nodeWidth));
-  const maxY = Math.max(...pipelineNodes.map((node) => node.position.y + nodeHeight));
+  const maxX = Math.max(
+    ...pipelineNodes.map((node) => node.position.x + (node.measured?.width ?? node.width ?? defaultNodeWidth))
+  );
+  const maxY = Math.max(
+    ...pipelineNodes.map((node) => node.position.y + (node.measured?.height ?? node.height ?? defaultNodeHeight))
+  );
 
   return {
     x: minX - 34,
@@ -2642,14 +2647,17 @@ export function CanvasWorkspace() {
           >
             <Background color={t.canvasGrid} gap={22} size={1} />
             {activePipelineBounds ? (
-              <div
-                className={`pipeline-highlight pipeline-${activePipeline?.status ?? "running"}`}
-                style={{
-                  transform: `translate(${activePipelineBounds.x}px, ${activePipelineBounds.y}px)`,
-                  width: activePipelineBounds.width,
-                  height: activePipelineBounds.height
-                }}
-              />
+              <ViewportPortal>
+                <div
+                  className={`pipeline-highlight pipeline-${activePipeline?.status ?? "running"}`}
+                  style={{
+                    left: activePipelineBounds.x,
+                    top: activePipelineBounds.y,
+                    width: activePipelineBounds.width,
+                    height: activePipelineBounds.height
+                  }}
+                />
+              </ViewportPortal>
             ) : null}
             <Controls position="bottom-left" />
             <MiniMap pannable zoomable position="bottom-right" />
