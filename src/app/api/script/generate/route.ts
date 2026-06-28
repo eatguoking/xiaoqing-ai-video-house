@@ -182,9 +182,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) {
-    const text = await response.text();
+  const responseText = await response.text();
+  let payload: unknown = null;
+  let parsedJson = false;
+
+  try {
+    payload = JSON.parse(responseText);
+    parsedJson = true;
+  } catch {
+    payload = null;
+  }
+
+  if (!parsedJson && /<!doctype html|<html/i.test(responseText)) {
     await writeApiLog({
       capability: "script",
       projectId,
@@ -195,22 +204,19 @@ export async function POST(request: Request) {
       status: response.status,
       elapsedMs: Date.now() - startedAt,
       requestBody: payloadBody,
-      responseBody: text,
+      responseBody: responseText,
       error: "External script API did not return JSON."
     });
     return NextResponse.json(
       {
         error: "External script API did not return JSON.",
-        hint: friendlyApiError({ status: response.status, text }),
-        detail: text.includes("<html")
-          ? "The Base URL returned a web page. For OpenAI-compatible APIs, the Base URL usually needs to end with /v1."
-          : text.slice(0, 1000)
+        hint: friendlyApiError({ status: response.status, text: responseText }),
+        detail: "The Base URL returned a web page. For OpenAI-compatible APIs, the Base URL usually needs to end with /v1."
       },
       { status: 502 }
     );
   }
 
-  const payload = await response.json().catch(() => ({}));
   await writeApiLog({
     capability: "script",
     projectId,
@@ -221,14 +227,14 @@ export async function POST(request: Request) {
     status: response.status,
     elapsedMs: Date.now() - startedAt,
     requestBody: payloadBody,
-    responseBody: payload
+    responseBody: parsedJson ? payload : responseText
   });
-  const modelText = readModelText(payload, selected.responseContentPath);
+  const modelText = parsedJson ? readModelText(payload, selected.responseContentPath) : responseText.trim();
   if (!modelText) {
     return NextResponse.json(
       {
         error: "External script API returned empty content.",
-        detail: JSON.stringify(payload).slice(0, 1000),
+        detail: (parsedJson ? JSON.stringify(payload) : responseText).slice(0, 1000),
         hint: friendlyApiError({ text: "empty content" })
       },
       { status: 502 }
