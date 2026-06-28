@@ -1016,6 +1016,8 @@ export function CanvasWorkspace() {
   const [saveStatus, setSaveStatus] = useState("Unsaved");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const lastEditedImageSavedAtRef = useRef(0);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadedProjectRef = useRef(false);
   const t = uiText[locale];
 
   const selectedNode = useMemo(
@@ -1205,12 +1207,14 @@ export function CanvasWorkspace() {
 
   const loadProject = useCallback(
     async (id = "default-project") => {
+      loadedProjectRef.current = false;
       setSaveStatus("Loading...");
       const response = await fetch(`/api/project?id=${encodeURIComponent(id)}`, { cache: "no-store" });
       const project = (await response.json()) as ProjectPayload;
       applyProject(project);
       await loadAssets(project.id || id).catch(() => undefined);
       await loadProjects().catch(() => undefined);
+      loadedProjectRef.current = true;
     },
     [applyProject, loadAssets, loadProjects]
   );
@@ -1226,7 +1230,53 @@ export function CanvasWorkspace() {
     setSelectedModelId(options[0]?.id ?? "");
   }, [models, selectedModelId, selectedNode?.id, selectedNode?.data.kind]);
 
-  const markDirty = useCallback(() => setSaveStatus("Unsaved changes"), []);
+  const saveProjectSnapshot = useCallback(
+    async (statusWhileSaving = "Saving...") => {
+      setSaveStatus(statusWhileSaving);
+      const response = await fetch(`/api/project?id=${encodeURIComponent(projectId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: projectId,
+          name: projectName,
+          nodes,
+          edges,
+          settings: {
+            aspectRatio: "9:16",
+            workspace: "local"
+          }
+        })
+      });
+
+      setSaveStatus(response.ok ? "Saved" : "Save failed");
+      if (response.ok) {
+        await loadProjects().catch(() => undefined);
+      }
+    },
+    [edges, loadProjects, nodes, projectId, projectName]
+  );
+
+  const markDirty = useCallback(() => {
+    loadedProjectRef.current = true;
+    setSaveStatus("Unsaved changes");
+  }, []);
+
+  useEffect(() => {
+    if (!loadedProjectRef.current || saveStatus !== "Unsaved changes") return undefined;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      saveProjectSnapshot("Saving...");
+      autoSaveTimerRef.current = null;
+    }, 1200);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [saveProjectSnapshot, saveStatus]);
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -1533,27 +1583,12 @@ export function CanvasWorkspace() {
   }, [createWorkflowNode, prompt, selectedNode, updateNodeStatus]);
 
   const handleSave = useCallback(async () => {
-    setSaveStatus("Saving...");
-    const response = await fetch(`/api/project?id=${encodeURIComponent(projectId)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: projectId,
-        name: projectName,
-        nodes,
-        edges,
-        settings: {
-          aspectRatio: "9:16",
-          workspace: "local"
-        }
-      })
-    });
-
-    setSaveStatus(response.ok ? "Saved" : "Save failed");
-    if (response.ok) {
-      await loadProjects().catch(() => undefined);
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
     }
-  }, [edges, loadProjects, nodes, projectId, projectName]);
+    await saveProjectSnapshot("Saving...");
+  }, [saveProjectSnapshot]);
 
   const exportBundle = useMemo(
     () => buildExportBundle({ name: projectName, nodes, edges, assets, jobs }),
