@@ -24,6 +24,7 @@ import {
   FileText,
   FolderOpen,
   GitBranch,
+  ImagePlus,
   KeyRound,
   Languages,
   Library,
@@ -335,6 +336,33 @@ type PromptTemplateRecord = {
   updatedAt: string;
 };
 
+type ExtractedMaterial = {
+  id: string;
+  type: "character" | "prop" | "scene";
+  name: string;
+  reason: string;
+  imagePrompt: string;
+  selected: boolean;
+  nodeId?: string;
+  status?: "idle" | "running" | "succeeded" | "failed";
+  error?: string;
+};
+
+type MaterialProgress = {
+  running: boolean;
+  total: number;
+  completed: number;
+  failed: number;
+  currentName: string;
+  message: string;
+};
+
+type ActivePipeline = {
+  sourceNodeId: string;
+  nodeIds: string[];
+  status: "running" | "succeeded" | "partial" | "failed";
+};
+
 const noModelLabel = "No external model";
 const editedImageEventType = "xiaoqing:image-edited";
 const editedImageStorageKey = "xiaoqing.imageEdited";
@@ -599,6 +627,43 @@ function workflowSummary(kind: GenerationNodeData["kind"]) {
   if (kind === "image") return "Generated from a storyboard shot prompt.";
   if (kind === "video") return "Generated from the upstream image node.";
   return "Generated from the upstream node.";
+}
+
+function materialTypeLabel(type: ExtractedMaterial["type"], locale: Locale) {
+  if (locale === "en") {
+    if (type === "character") return "Character";
+    if (type === "scene") return "Scene";
+    return "Prop";
+  }
+  if (type === "character") return "角色";
+  if (type === "scene") return "场景";
+  return "道具";
+}
+
+function materialNodeTitle(material: Pick<ExtractedMaterial, "type" | "name">) {
+  const prefix = material.type === "character" ? "角色" : material.type === "scene" ? "场景" : "道具";
+  return `${prefix} - ${material.name}`;
+}
+
+function pipelineBounds(nodes: Node<GenerationNodeData>[], pipeline: ActivePipeline | null) {
+  if (!pipeline) return null;
+  const ids = new Set([pipeline.sourceNodeId, ...pipeline.nodeIds]);
+  const pipelineNodes = nodes.filter((node) => ids.has(node.id));
+  if (!pipelineNodes.length) return null;
+
+  const nodeWidth = 270;
+  const nodeHeight = 190;
+  const minX = Math.min(...pipelineNodes.map((node) => node.position.x));
+  const minY = Math.min(...pipelineNodes.map((node) => node.position.y));
+  const maxX = Math.max(...pipelineNodes.map((node) => node.position.x + nodeWidth));
+  const maxY = Math.max(...pipelineNodes.map((node) => node.position.y + nodeHeight));
+
+  return {
+    x: minX - 34,
+    y: minY - 34,
+    width: maxX - minX + 68,
+    height: maxY - minY + 68
+  };
 }
 
 function extractStoryboardPrompts(text: string) {
@@ -1010,6 +1075,21 @@ export function CanvasWorkspace() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateRecord[]>([]);
+  const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
+  const [materialSourceAsset, setMaterialSourceAsset] = useState<Asset | null>(null);
+  const [extractedMaterials, setExtractedMaterials] = useState<ExtractedMaterial[]>([]);
+  const [materialStyleGuide, setMaterialStyleGuide] = useState("");
+  const [materialMessage, setMaterialMessage] = useState("");
+  const [extractingMaterials, setExtractingMaterials] = useState(false);
+  const [materialProgress, setMaterialProgress] = useState<MaterialProgress>({
+    running: false,
+    total: 0,
+    completed: 0,
+    failed: 0,
+    currentName: "",
+    message: ""
+  });
+  const [activePipeline, setActivePipeline] = useState<ActivePipeline | null>(null);
   const [reactFlowInstance, setReactFlowInstance] =
     useState<ReactFlowInstance<Node<GenerationNodeData>, Edge> | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
@@ -1093,6 +1173,7 @@ export function CanvasWorkspace() {
       : updaterStatus?.status === "downloaded"
         ? t.installUpdate
         : t.checkUpdates;
+  const activePipelineBounds = useMemo(() => pipelineBounds(nodes, activePipeline), [activePipeline, nodes]);
 
   const selectedImageChildCount = useMemo(() => {
     if (!selectedNode) return 0;
@@ -1821,6 +1902,252 @@ export function CanvasWorkspace() {
     [updateNodeData]
   );
 
+  const handleExtractMaterials = useCallback(
+    async (asset: Asset, draftText: string) => {
+      const sourceText = draftText.trim() || assetText(asset);
+      const sourceNode = nodes.find((node) => node.id === asset.nodeId);
+      if (!sourceText || asset.type !== "storyboard" || !sourceNode) {
+        setMaterialMessage("请选择已经生成内容的分镜节点。");
+        return;
+      }
+
+      const scriptModel = findModel(selectedModelId, models);
+      if (!selectedModelId || !scriptModel || scriptModel.capability !== "script") {
+        setMaterialMessage("请先在右侧为分镜节点选择一个剧本/文本模型。");
+        return;
+      }
+
+      setMaterialSourceAsset({ ...asset, payload: { ...(asset.payload ?? {}), rawText: sourceText } });
+      setMaterialPanelOpen(true);
+      setExtractingMaterials(true);
+      setMaterialMessage("正在分析分镜里的关键人物、道具和场景...");
+      setExtractedMaterials([]);
+      setMaterialStyleGuide("");
+
+      try {
+        const response = await fetch("/api/script/extract-materials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ modelId: selectedModelId, projectId, text: sourceText })
+        });
+        const result = (await response.json().catch(() => ({}))) as {
+          styleGuide?: string;
+          materials?: Array<Omit<ExtractedMaterial, "selected">>;
+          error?: string;
+          detail?: string;
+          rawText?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error([result.error, result.detail].filter(Boolean).join(" ") || "素材提取失败。");
+        }
+
+        const materials = Array.isArray(result.materials)
+          ? result.materials.map((item, index) => ({
+              id: item.id || `material_${Date.now()}_${index}`,
+              type: item.type,
+              name: item.name,
+              reason: item.reason,
+              imagePrompt: item.imagePrompt,
+              selected: true,
+              status: "idle" as const
+            }))
+          : [];
+
+        setMaterialStyleGuide(result.styleGuide ?? "");
+        setExtractedMaterials(materials);
+        setMaterialMessage(materials.length ? `已提取 ${materials.length} 个关键素材。` : "没有提取到可用素材。");
+      } catch (error) {
+        setMaterialMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setExtractingMaterials(false);
+      }
+    },
+    [models, nodes, projectId, selectedModelId]
+  );
+
+  const handleMaterialChange = useCallback((id: string, patch: Partial<ExtractedMaterial>) => {
+    setExtractedMaterials((current) =>
+      current.map((material) => (material.id === id ? { ...material, ...patch } : material))
+    );
+  }, []);
+
+  const handleGenerateMaterialAssets = useCallback(
+    async (generateNow: boolean) => {
+      const sourceNodeId = materialSourceAsset?.nodeId;
+      const sourceNode = nodes.find((node) => node.id === sourceNodeId);
+      if (!sourceNode) {
+        setMaterialMessage("找不到来源分镜节点。");
+        return;
+      }
+
+      const imageModel = models.image?.[0];
+      if (!imageModel) {
+        setMaterialMessage("请先配置并同步至少一个图像生成模型。");
+        return;
+      }
+
+      const selectedMaterials = extractedMaterials.filter((material) => material.selected && material.imagePrompt.trim());
+      if (!selectedMaterials.length) {
+        setMaterialMessage("请至少选择一个素材。");
+        return;
+      }
+
+      const createdNodes = selectedMaterials.map((material, index) => {
+        const id = `image-material-${Date.now()}-${index}`;
+        return {
+          materialId: material.id,
+          node: {
+            id,
+            type: "generation",
+            position: {
+              x: sourceNode.position.x + 330 + (index % 3) * 290,
+              y: sourceNode.position.y + Math.floor(index / 3) * 210
+            },
+            data: {
+              title: materialNodeTitle(material),
+              kind: "image",
+              model: noModelLabel,
+              status: "idle",
+              summary: material.reason || "关键素材图片节点",
+              input: [materialStyleGuide, material.imagePrompt].filter(Boolean).join("\n\n"),
+              sourceNodeId: sourceNode.id
+            } satisfies GenerationNodeData
+          } satisfies Node<GenerationNodeData>
+        };
+      });
+
+      const nextNodeIds = createdNodes.map((item) => item.node.id);
+      setNodes((currentNodes) => [...currentNodes, ...createdNodes.map((item) => item.node)]);
+      setEdges((currentEdges) => [
+        ...currentEdges,
+        ...createdNodes.map((item) => ({
+          id: `e-${sourceNode.id}-${item.node.id}`,
+          source: sourceNode.id,
+          target: item.node.id
+        }))
+      ]);
+      setExtractedMaterials((current) =>
+        current.map((material) => {
+          const match = createdNodes.find((item) => item.materialId === material.id);
+          return match ? { ...material, nodeId: match.node.id, status: "idle" } : material;
+        })
+      );
+      setActivePipeline({ sourceNodeId: sourceNode.id, nodeIds: nextNodeIds, status: "running" });
+      setMaterialProgress({
+        running: false,
+        total: selectedMaterials.length,
+        completed: 0,
+        failed: 0,
+        currentName: "",
+        message: `已创建 ${selectedMaterials.length} 个素材图片节点。`
+      });
+      setMaterialMessage(`已创建 ${selectedMaterials.length} 个素材图片节点。`);
+      markDirty();
+
+      if (!generateNow) return;
+
+      if (!window.confirm(`已创建 ${selectedMaterials.length} 个素材图片节点，是否现在按顺序一键生成？`)) {
+        return;
+      }
+
+      let completed = 0;
+      let failed = 0;
+      setMaterialProgress({
+        running: true,
+        total: selectedMaterials.length,
+        completed,
+        failed,
+        currentName: selectedMaterials[0]?.name ?? "",
+        message: "开始顺序生成素材..."
+      });
+
+      for (const item of createdNodes) {
+        const material = selectedMaterials.find((entry) => entry.id === item.materialId);
+        if (!material) continue;
+
+        setMaterialProgress({
+          running: true,
+          total: selectedMaterials.length,
+          completed,
+          failed,
+          currentName: material.name,
+          message: `正在生成 ${completed + failed + 1} / ${selectedMaterials.length}`
+        });
+        setExtractedMaterials((current) =>
+          current.map((entry) => (entry.id === material.id ? { ...entry, status: "running", error: "" } : entry))
+        );
+        updateNodeStatus(item.node.id, "running", `Generating material: ${material.name}`, `${imageModel.sourceName} / ${imageModel.model}`);
+
+        try {
+          const response = await fetch("/api/image/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              modelId: imageModel.id,
+              projectId,
+              input: {
+                prompt: [materialStyleGuide, material.imagePrompt].filter(Boolean).join("\n\n"),
+                projectId
+              }
+            })
+          });
+          const job = (await response.json().catch(() => ({}))) as JobRecord & { hint?: string; error?: string };
+          if (!response.ok) {
+            throw new Error(errorMessage(job, "素材图片生成失败。"));
+          }
+          setJobs((current) => [job, ...current]);
+          if (job.assets?.length) {
+            const asset = job.assets[0] as Asset;
+            setAssets((current) => [asset, ...current]);
+            applyAssetToNode(item.node.id, asset);
+          }
+          completed += 1;
+          setExtractedMaterials((current) =>
+            current.map((entry) => (entry.id === material.id ? { ...entry, status: "succeeded" } : entry))
+          );
+          updateNodeStatus(item.node.id, "succeeded", `Material generated: ${material.name}`, `${imageModel.sourceName} / ${imageModel.model}`);
+        } catch (error) {
+          failed += 1;
+          const message = error instanceof Error ? error.message : String(error);
+          setExtractedMaterials((current) =>
+            current.map((entry) =>
+              entry.id === material.id ? { ...entry, status: "failed", error: message } : entry
+            )
+          );
+          updateNodeStatus(item.node.id, "failed", message, `${imageModel.sourceName} / ${imageModel.model}`);
+        }
+      }
+
+      setMaterialProgress({
+        running: false,
+        total: selectedMaterials.length,
+        completed,
+        failed,
+        currentName: "",
+        message: `素材生成完成：成功 ${completed} 个，失败 ${failed} 个。`
+      });
+      setMaterialMessage(`素材生成完成：成功 ${completed} 个，失败 ${failed} 个。`);
+      setActivePipeline({ sourceNodeId: sourceNode.id, nodeIds: nextNodeIds, status: failed ? "partial" : "succeeded" });
+      window.setTimeout(() => {
+        setActivePipeline((current) => (current?.sourceNodeId === sourceNode.id ? null : current));
+      }, failed ? 5000 : 1600);
+    },
+    [
+      applyAssetToNode,
+      extractedMaterials,
+      markDirty,
+      materialSourceAsset?.nodeId,
+      materialStyleGuide,
+      models.image,
+      nodes,
+      projectId,
+      setEdges,
+      setNodes,
+      updateNodeStatus
+    ]
+  );
+
   const applyEditedImageEvent = useCallback(
     (data: EditedImageEvent | null | undefined) => {
       if (data?.type !== editedImageEventType || !data.nodeId || !data.asset) return;
@@ -2314,6 +2641,16 @@ export function CanvasWorkspace() {
             fitView
           >
             <Background color={t.canvasGrid} gap={22} size={1} />
+            {activePipelineBounds ? (
+              <div
+                className={`pipeline-highlight pipeline-${activePipeline?.status ?? "running"}`}
+                style={{
+                  transform: `translate(${activePipelineBounds.x}px, ${activePipelineBounds.y}px)`,
+                  width: activePipelineBounds.width,
+                  height: activePipelineBounds.height
+                }}
+              />
+            ) : null}
             <Controls position="bottom-left" />
             <MiniMap pannable zoomable position="bottom-right" />
           </ReactFlow>
@@ -2461,6 +2798,15 @@ export function CanvasWorkspace() {
         locale={locale}
         onClose={() => setPreviewAsset(null)}
         onSave={handleSavePreviewAsset}
+        materialPanelOpen={materialPanelOpen}
+        materials={extractedMaterials}
+        materialStyleGuide={materialStyleGuide}
+        materialMessage={materialMessage}
+        materialProgress={materialProgress}
+        extractingMaterials={extractingMaterials}
+        onExtractMaterials={handleExtractMaterials}
+        onMaterialChange={handleMaterialChange}
+        onGenerateMaterials={handleGenerateMaterialAssets}
       />
     </main>
   );
@@ -3167,12 +3513,30 @@ function AssetPreviewModal({
   asset,
   locale,
   onClose,
-  onSave
+  onSave,
+  materialPanelOpen,
+  materials,
+  materialStyleGuide,
+  materialMessage,
+  materialProgress,
+  extractingMaterials,
+  onExtractMaterials,
+  onMaterialChange,
+  onGenerateMaterials
 }: {
   asset: Asset | null;
   locale: Locale;
   onClose: () => void;
   onSave: (asset: Asset, draftText: string) => Promise<void>;
+  materialPanelOpen: boolean;
+  materials: ExtractedMaterial[];
+  materialStyleGuide: string;
+  materialMessage: string;
+  materialProgress: MaterialProgress;
+  extractingMaterials: boolean;
+  onExtractMaterials: (asset: Asset, draftText: string) => Promise<void>;
+  onMaterialChange: (id: string, patch: Partial<ExtractedMaterial>) => void;
+  onGenerateMaterials: (generateNow: boolean) => Promise<void>;
 }) {
   const t = uiText[locale];
   const [draftText, setDraftText] = useState("");
@@ -3195,6 +3559,17 @@ function AssetPreviewModal({
             <small>{asset.type} {t.assetType}</small>
           </div>
           <div className="asset-preview-actions">
+            {asset.type === "storyboard" ? (
+              <button
+                className="material-extract-button"
+                type="button"
+                onClick={() => onExtractMaterials(asset, draftText)}
+                disabled={extractingMaterials || materialProgress.running}
+              >
+                <ImagePlus size={16} />
+                {extractingMaterials ? "提取中..." : "提取素材"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={async () => {
@@ -3237,6 +3612,85 @@ function AssetPreviewModal({
             value={draftText}
             onChange={(event) => setDraftText(event.target.value)}
           />
+        ) : null}
+
+        {asset.type === "storyboard" && materialPanelOpen ? (
+          <section className="material-panel">
+            <div className="material-panel-head">
+              <div>
+                <strong>关键素材</strong>
+                <small>{materialMessage || "确认后会生成对应图片节点。"}</small>
+              </div>
+              <div className="material-panel-actions">
+                <button
+                  type="button"
+                  onClick={() => onGenerateMaterials(false)}
+                  disabled={!materials.some((material) => material.selected) || materialProgress.running}
+                >
+                  只创建节点
+                </button>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={() => onGenerateMaterials(true)}
+                  disabled={!materials.some((material) => material.selected) || materialProgress.running}
+                >
+                  创建并生成
+                </button>
+              </div>
+            </div>
+
+            {materialStyleGuide ? <p className="material-style-guide">{materialStyleGuide}</p> : null}
+
+            {materialProgress.total > 0 ? (
+              <div className="material-progress">
+                <div>
+                  <span>{materialProgress.running ? `正在生成 ${materialProgress.completed + materialProgress.failed + 1} / ${materialProgress.total}` : materialProgress.message}</span>
+                  <strong>{materialProgress.currentName}</strong>
+                </div>
+                <div className="material-progress-track">
+                  <span
+                    style={{
+                      width: `${Math.min(100, Math.round(((materialProgress.completed + materialProgress.failed) / materialProgress.total) * 100))}%`
+                    }}
+                  />
+                </div>
+                <small>成功 {materialProgress.completed} 个 / 失败 {materialProgress.failed} 个</small>
+              </div>
+            ) : null}
+
+            <div className="material-list">
+              {extractingMaterials ? <span className="empty-text">正在让 AI 整理关键素材...</span> : null}
+              {!extractingMaterials && materials.length === 0 ? <span className="empty-text">还没有素材清单。</span> : null}
+              {materials.map((material) => (
+                <article className={`material-card material-${material.status ?? "idle"}`} key={material.id}>
+                  <label className="material-card-top">
+                    <input
+                      type="checkbox"
+                      checked={material.selected}
+                      onChange={(event) => onMaterialChange(material.id, { selected: event.target.checked })}
+                      disabled={materialProgress.running}
+                    />
+                    <span>{materialTypeLabel(material.type, locale)}</span>
+                    <strong>{material.name}</strong>
+                    {material.status ? <em>{material.status}</em> : null}
+                  </label>
+                  <input
+                    value={material.name}
+                    onChange={(event) => onMaterialChange(material.id, { name: event.target.value })}
+                    disabled={materialProgress.running}
+                  />
+                  <textarea
+                    value={material.imagePrompt}
+                    onChange={(event) => onMaterialChange(material.id, { imagePrompt: event.target.value })}
+                    disabled={materialProgress.running}
+                  />
+                  {material.reason ? <small>{material.reason}</small> : null}
+                  {material.error ? <small className="material-error">{material.error}</small> : null}
+                </article>
+              ))}
+            </div>
+          </section>
         ) : null}
       </section>
     </div>
