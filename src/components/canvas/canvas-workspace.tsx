@@ -1085,6 +1085,7 @@ export function CanvasWorkspace() {
   const [extractedMaterials, setExtractedMaterials] = useState<ExtractedMaterial[]>([]);
   const [materialStyleGuide, setMaterialStyleGuide] = useState("");
   const [materialMessage, setMaterialMessage] = useState("");
+  const [materialImageRatio, setMaterialImageRatio] = useState("1:1");
   const [extractingMaterials, setExtractingMaterials] = useState(false);
   const [materialProgress, setMaterialProgress] = useState<MaterialProgress>({
     running: false,
@@ -2016,6 +2017,7 @@ export function CanvasWorkspace() {
               status: "idle",
               summary: material.reason || "关键素材图片节点",
               input: [materialStyleGuide, material.imagePrompt].filter(Boolean).join("\n\n"),
+              ratio: materialImageRatio,
               sourceNodeId: sourceNode.id
             } satisfies GenerationNodeData
           } satisfies Node<GenerationNodeData>
@@ -2093,6 +2095,7 @@ export function CanvasWorkspace() {
               projectId,
               input: {
                 prompt: [materialStyleGuide, material.imagePrompt].filter(Boolean).join("\n\n"),
+                ratio: materialImageRatio,
                 projectId
               }
             })
@@ -2143,6 +2146,7 @@ export function CanvasWorkspace() {
       extractedMaterials,
       markDirty,
       materialSourceAsset?.nodeId,
+      materialImageRatio,
       materialStyleGuide,
       models.image,
       nodes,
@@ -2810,10 +2814,12 @@ export function CanvasWorkspace() {
         materials={extractedMaterials}
         materialStyleGuide={materialStyleGuide}
         materialMessage={materialMessage}
+        materialImageRatio={materialImageRatio}
         materialProgress={materialProgress}
         extractingMaterials={extractingMaterials}
         onExtractMaterials={handleExtractMaterials}
         onMaterialChange={handleMaterialChange}
+        onMaterialImageRatioChange={setMaterialImageRatio}
         onGenerateMaterials={handleGenerateMaterialAssets}
       />
     </main>
@@ -3526,10 +3532,12 @@ function AssetPreviewModal({
   materials,
   materialStyleGuide,
   materialMessage,
+  materialImageRatio,
   materialProgress,
   extractingMaterials,
   onExtractMaterials,
   onMaterialChange,
+  onMaterialImageRatioChange,
   onGenerateMaterials
 }: {
   asset: Asset | null;
@@ -3540,10 +3548,12 @@ function AssetPreviewModal({
   materials: ExtractedMaterial[];
   materialStyleGuide: string;
   materialMessage: string;
+  materialImageRatio: string;
   materialProgress: MaterialProgress;
   extractingMaterials: boolean;
   onExtractMaterials: (asset: Asset, draftText: string) => Promise<void>;
   onMaterialChange: (id: string, patch: Partial<ExtractedMaterial>) => void;
+  onMaterialImageRatioChange: (ratio: string) => void;
   onGenerateMaterials: (generateNow: boolean) => Promise<void>;
 }) {
   const t = uiText[locale];
@@ -3630,6 +3640,22 @@ function AssetPreviewModal({
                 <small>{materialMessage || "确认后会生成对应图片节点。"}</small>
               </div>
               <div className="material-panel-actions">
+                <label className="material-ratio-picker">
+                  <span>图片比例</span>
+                  <select
+                    value={materialImageRatio}
+                    onChange={(event) => onMaterialImageRatioChange(event.target.value)}
+                    disabled={materialProgress.running}
+                  >
+                    <option value="1:1">1:1</option>
+                    <option value="9:16">9:16</option>
+                    <option value="16:9">16:9</option>
+                    <option value="3:4">3:4</option>
+                    <option value="4:3">4:3</option>
+                    <option value="2:3">2:3</option>
+                    <option value="3:2">3:2</option>
+                  </select>
+                </label>
                 <button
                   type="button"
                   onClick={() => onGenerateMaterials(false)}

@@ -32,11 +32,30 @@ function renderTemplate(template: string, values: Record<string, string | number
   return JSON.parse(rendered);
 }
 
-function requestBody(input: { template: string | null; model: string; prompt: string; imageUrl?: string; editMode?: boolean }) {
+function imageSizeForRatio(ratio: string) {
+  if (ratio === "9:16") return "1024x1792";
+  if (ratio === "16:9") return "1792x1024";
+  if (ratio === "4:3") return "1536x1152";
+  if (ratio === "3:4") return "1152x1536";
+  if (ratio === "3:2") return "1536x1024";
+  if (ratio === "2:3") return "1024x1536";
+  return "1024x1024";
+}
+
+function requestBody(input: {
+  template: string | null;
+  model: string;
+  prompt: string;
+  imageUrl?: string;
+  editMode?: boolean;
+  ratio: string;
+}) {
+  const size = imageSizeForRatio(input.ratio);
   const defaults = {
     model: input.model,
     prompt: input.prompt,
-    size: "1024x1024",
+    size,
+    ratio: input.ratio,
     n: 1,
     ...(input.imageUrl
       ? {
@@ -57,8 +76,8 @@ function requestBody(input: { template: string | null; model: string; prompt: st
       prompt: input.prompt,
       imageUrl: input.imageUrl ?? "",
       duration: 5,
-      ratio: "1:1",
-      size: "1024x1024",
+      ratio: input.ratio,
+      size,
       count: 1,
       editMode: input.editMode ? 1 : 0
     });
@@ -90,6 +109,7 @@ export async function POST(request: Request) {
   const prompt = body.input?.prompt || body.prompt || "cinematic vertical drama frame";
   const referenceImageUrl = body.input?.imageUrl || body.imageUrl || "";
   const editMode = body.input?.editMode === true || body.editMode === true;
+  const ratio = String(body.input?.ratio ?? body.ratio ?? "1:1").trim() || "1:1";
   const projectId = String(body.projectId ?? body.input?.projectId ?? "").trim() || null;
   const endpoint = makeUrl(selected.baseUrl, selected.generatePath || "/images/generations");
   const payloadBody = requestBody({
@@ -97,7 +117,8 @@ export async function POST(request: Request) {
     model: runtimeModel,
     prompt,
     imageUrl: referenceImageUrl,
-    editMode
+    editMode,
+    ratio
   });
   const startedAt = Date.now();
   let response: Response;
@@ -223,6 +244,8 @@ export async function POST(request: Request) {
     url: generatedImageUrl,
     referenceImageUrl,
     editMode,
+    ratio,
+    size: imageSizeForRatio(ratio),
     prompt,
     provider: selected.provider,
     model: runtimeModel
