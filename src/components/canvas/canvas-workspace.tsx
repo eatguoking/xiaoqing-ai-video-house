@@ -521,9 +521,63 @@ function findModel(modelId: string, models: ModelsResponse) {
   return allModels(models).find((model) => model.id === modelId);
 }
 
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  return "";
+}
+
 function nodeOutputText(node: Node<GenerationNodeData> | undefined) {
   if (!node) return "";
-  return node.data.assetContent || node.data.assetPreview || node.data.summary || "";
+  const legacyData = node.data as GenerationNodeData & {
+    rawText?: unknown;
+    dialogue?: unknown;
+    prompt?: unknown;
+    output?: { rawText?: unknown; dialogue?: unknown; text?: unknown; content?: unknown; logline?: unknown };
+    payload?: { rawText?: unknown; dialogue?: unknown; prompt?: unknown; text?: unknown; content?: unknown };
+  };
+
+  return firstText(
+    node.data.assetContent,
+    legacyData.rawText,
+    legacyData.output?.rawText,
+    legacyData.payload?.rawText,
+    legacyData.dialogue,
+    legacyData.output?.dialogue,
+    legacyData.payload?.dialogue,
+    legacyData.prompt,
+    legacyData.output?.text,
+    legacyData.output?.content,
+    legacyData.payload?.text,
+    legacyData.payload?.content,
+    node.data.assetPreview,
+    legacyData.output?.logline,
+    node.data.input,
+    node.data.summary
+  );
+}
+
+function generationInputForNode(input: {
+  kind: GenerationNodeData["kind"];
+  nodeInput?: string;
+  upstreamText: string;
+  prompt: string;
+  imageEditPrompt?: string;
+  assetContent?: string;
+  summary?: string;
+  imageEditMode?: boolean;
+}) {
+  if (input.imageEditMode) {
+    return firstText(input.imageEditPrompt, input.assetContent, input.summary);
+  }
+
+  if (input.kind === "storyboard" || input.kind === "image" || input.kind === "video") {
+    return firstText(input.upstreamText, input.nodeInput, input.prompt);
+  }
+
+  return firstText(input.nodeInput, input.upstreamText, input.prompt);
 }
 
 function nextWorkflowKind(kind: GenerationNodeData["kind"]): GenerationNodeData["kind"] | null {
@@ -2005,9 +2059,16 @@ export function CanvasWorkspace() {
 
     const kind = selectedNode.data.kind;
     const isImageEditRun = kind === "image" && selectedNode.data.imageEditMode === true;
-    const nodeInput = isImageEditRun
-      ? selectedNode.data.imageEditPrompt || selectedNode.data.assetContent || selectedNode.data.summary
-      : selectedNode.data.input?.trim() || upstreamText || prompt;
+    const nodeInput = generationInputForNode({
+      kind,
+      nodeInput: selectedNode.data.input,
+      upstreamText,
+      prompt,
+      imageEditMode: isImageEditRun,
+      imageEditPrompt: selectedNode.data.imageEditPrompt,
+      assetContent: selectedNode.data.assetContent,
+      summary: selectedNode.data.summary
+    });
     const selectedModel = findModel(selectedModelId, models);
     if (!selectedModelId || !selectedModel) {
       updateNodeStatus(selectedNode.id, "failed", "Configure and select an external model first.", noModelLabel);
