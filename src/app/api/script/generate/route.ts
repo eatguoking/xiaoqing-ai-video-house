@@ -26,8 +26,12 @@ function requestBody(input: {
   model: string;
   prompt: string;
   roleHint: string;
+  style: string;
+  length: string;
+  language: string;
+  temperature: number;
 }) {
-  const fullPrompt = `${input.roleHint}\n\nUser request: ${input.prompt}`;
+  const fullPrompt = `${input.roleHint}\n\nStyle: ${input.style}\nLength: ${input.length}\nLanguage: ${input.language}\n\nUser request: ${input.prompt}`;
   const defaults = {
     model: input.model,
     messages: [
@@ -41,7 +45,7 @@ function requestBody(input: {
         content: fullPrompt
       }
     ],
-    temperature: 0.8
+    temperature: input.temperature
   };
 
   if (!input.template?.trim()) return defaults;
@@ -52,6 +56,10 @@ function requestBody(input: {
       prompt: input.prompt,
       fullPrompt,
       roleHint: input.roleHint,
+      style: input.style,
+      length: input.length,
+      language: input.language,
+      temperature: input.temperature,
       imageUrl: "",
       duration: 60,
       ratio: "9:16",
@@ -110,6 +118,10 @@ export async function POST(request: Request) {
   const theme = body.input?.theme || body.prompt || "Modern urban short drama";
   const projectId = String(body.projectId ?? body.input?.projectId ?? "").trim() || null;
   const kind = body.input?.kind || "script";
+  const style = String(body.input?.style || body.style || "短剧");
+  const length = String(body.input?.length || body.length || "中");
+  const language = String(body.input?.language || body.language || "中文");
+  const temperature = Number(body.input?.temperature ?? body.temperature ?? 0.8) || 0.8;
   const roleHint =
     kind === "storyboard"
       ? "Create a storyboard with shot number, visual action, dialogue, camera movement, and image prompt."
@@ -121,7 +133,11 @@ export async function POST(request: Request) {
     template: selected.requestTemplateJson,
     model: runtimeModel,
     prompt: theme,
-    roleHint
+    roleHint,
+    style,
+    length,
+    language,
+    temperature
   });
   const startedAt = Date.now();
 

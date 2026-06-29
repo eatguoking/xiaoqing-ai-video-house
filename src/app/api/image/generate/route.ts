@@ -50,14 +50,16 @@ function requestBody(input: {
   imageUrl?: string;
   editMode?: boolean;
   ratio: string;
+  size: string;
+  variants: number;
 }) {
-  const size = imageSizeForRatio(input.ratio);
+  const size = input.size || imageSizeForRatio(input.ratio);
   const defaults = {
     model: input.model,
     prompt: input.prompt,
     size,
     ratio: input.ratio,
-    n: 1,
+    n: input.variants,
     ...(input.imageUrl
       ? {
           image_url: input.imageUrl,
@@ -79,7 +81,8 @@ function requestBody(input: {
       duration: 5,
       ratio: input.ratio,
       size,
-      count: 1,
+      count: input.variants,
+      variants: input.variants,
       editMode: input.editMode ? 1 : 0
     });
   } catch (error) {
@@ -111,6 +114,8 @@ export async function POST(request: Request) {
   const referenceImageUrl = body.input?.imageUrl || body.imageUrl || "";
   const editMode = body.input?.editMode === true || body.editMode === true;
   const ratio = String(body.input?.ratio ?? body.ratio ?? "1:1").trim() || "1:1";
+  const size = String(body.input?.size ?? body.size ?? imageSizeForRatio(ratio)).trim() || imageSizeForRatio(ratio);
+  const variants = Math.max(1, Math.min(4, Number(body.input?.variants ?? body.variants ?? 1) || 1));
   const projectId = String(body.projectId ?? body.input?.projectId ?? "").trim() || null;
   const endpoint = makeUrl(selected.baseUrl, selected.generatePath || "/images/generations");
   const payloadBody = requestBody({
@@ -119,7 +124,9 @@ export async function POST(request: Request) {
     prompt,
     imageUrl: referenceImageUrl,
     editMode,
-    ratio
+    ratio,
+    size,
+    variants
   });
   const startedAt = Date.now();
   let response: Response;
@@ -246,7 +253,8 @@ export async function POST(request: Request) {
     referenceImageUrl,
     editMode,
     ratio,
-    size: imageSizeForRatio(ratio),
+    size,
+    variants,
     prompt,
     provider: selected.provider,
     model: runtimeModel

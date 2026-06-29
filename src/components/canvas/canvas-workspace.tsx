@@ -1655,7 +1655,13 @@ export function CanvasWorkspace() {
           summary: workflowSummary(kind),
           input,
           sourceNodeId: sourceNode.id,
-          sourceAssetUrl: kind === "video" ? sourceNode.data.assetUrl : undefined
+          sourceAssetUrl: kind === "video" ? sourceNode.data.assetUrl : undefined,
+          ratio: kind === "image" ? "1:1" : kind === "video" ? "9:16" : undefined,
+          size: kind === "image" ? "1024x1024" : undefined,
+          resolution: kind === "video" ? "1080x1920" : undefined,
+          duration: kind === "video" ? 5 : undefined,
+          variants: kind === "image" || kind === "video" ? 1 : undefined,
+          camera: kind === "video" ? "slow push-in" : undefined
         }
       };
 
@@ -1669,6 +1675,16 @@ export function CanvasWorkspace() {
       return node;
     },
     [markDirty, setEdges, setNodes]
+  );
+
+  const handleQuickAddNode = useCallback(
+    (sourceNodeId: string, kind: GenerationNodeData["kind"]) => {
+      const sourceNode = nodes.find((node) => node.id === sourceNodeId);
+      if (!sourceNode) return;
+      const input = nodeOutputText(sourceNode) || sourceNode.data.input || prompt;
+      createWorkflowNode(kind, sourceNode, input, { x: 320, y: 0 });
+    },
+    [createWorkflowNode, nodes, prompt]
   );
 
   const handleCreateNextNode = useCallback(() => {
@@ -1712,6 +1728,18 @@ export function CanvasWorkspace() {
   const exportBundle = useMemo(
     () => buildExportBundle({ name: projectName, nodes, edges, assets, jobs }),
     [assets, edges, jobs, nodes, projectName]
+  );
+
+  const nodesForRender = useMemo(
+    () =>
+      nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          onQuickAdd: (kind: GenerationNodeData["kind"]) => handleQuickAddNode(node.id, kind)
+        }
+      })),
+    [handleQuickAddNode, nodes]
   );
 
   const exportMarkdown = useMemo(() => buildExportMarkdown(exportBundle), [exportBundle]);
@@ -2525,7 +2553,19 @@ export function CanvasWorkspace() {
         const response = await fetch("/api/script/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ modelId: selectedModelId, projectId, input: { theme: nodeInput, kind, projectId } })
+          body: JSON.stringify({
+            modelId: selectedModelId,
+            projectId,
+            input: {
+              theme: nodeInput,
+              kind,
+              projectId,
+              style: selectedNode.data.style,
+              length: selectedNode.data.length,
+              language: selectedNode.data.language,
+              temperature: selectedNode.data.temperature
+            }
+          })
         });
         const result = await readJsonResponse<{
           id?: string;
@@ -2565,12 +2605,16 @@ export function CanvasWorkspace() {
               prompt: nodeInput,
               imageUrl: sourceImageUrl,
               ratio: selectedNode.data.ratio ?? "9:16",
+              resolution: selectedNode.data.resolution ?? "1080x1920",
               duration: selectedNode.data.duration ?? 5,
               camera: selectedNode.data.camera ?? "slow push-in",
               variants: selectedNode.data.variants ?? 1
             }
           : {
               prompt: nodeInput,
+              ratio: selectedNode.data.ratio ?? "1:1",
+              size: selectedNode.data.size ?? "1024x1024",
+              variants: selectedNode.data.variants ?? 1,
               ...(isImageEditRun
                 ? {
                     imageUrl: selectedNode.data.imageEditReferenceUrl || selectedNode.data.assetUrl,
@@ -2720,7 +2764,7 @@ export function CanvasWorkspace() {
         <LeftPanel locale={locale} activeKind={selectedNode?.data.kind} onAddNode={handleAddNode} />
         <section className="canvas-area">
           <ReactFlow
-            nodes={nodes}
+            nodes={nodesForRender}
             edges={edges}
             nodeTypes={nodeTypes}
             onNodesChange={handleNodesChange}

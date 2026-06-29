@@ -592,8 +592,8 @@ body[data-theme="dark"] .react-flow__controls-button {
 }
 
 .node-handle {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   border: 3px solid #fff;
   background: var(--accent-2);
   box-shadow: 0 2px 8px rgba(60, 109, 240, 0.26);
@@ -601,21 +601,76 @@ body[data-theme="dark"] .react-flow__controls-button {
 
 .node-handle::after {
   position: absolute;
-  inset: -8px;
+  inset: -12px;
   content: "";
 }
 
 .react-flow__handle-left.node-handle {
-  left: -10px;
+  left: -14px;
 }
 
 .react-flow__handle-right.node-handle {
-  right: -10px;
+  right: -14px;
 }
 
 .node-handle:hover {
   background: #0f8f8c;
   transform: scale(1.08);
+}
+
+.node-quick-add {
+  position: absolute;
+  top: 50%;
+  right: -48px;
+  z-index: 20;
+  transform: translateY(-50%);
+}
+
+.node-quick-add-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(0, 122, 255, 0.36);
+  border-radius: 999px;
+  color: #fff;
+  background: var(--accent-2);
+  box-shadow: 0 10px 24px rgba(0, 122, 255, 0.28);
+  cursor: pointer;
+}
+
+.node-quick-menu {
+  position: absolute;
+  top: 50%;
+  left: 40px;
+  display: none;
+  min-width: 86px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-solid);
+  box-shadow: var(--soft-shadow);
+  transform: translateY(-50%);
+}
+
+.node-quick-add:hover .node-quick-menu,
+.node-quick-add:focus-within .node-quick-menu {
+  display: grid;
+  gap: 4px;
+}
+
+.node-quick-menu button {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.node-quick-menu button:hover {
+  background: var(--surface-2);
 }
 
 .pipeline-highlight {
@@ -3482,6 +3537,7 @@ body[data-theme="dark"] .canvas-area {
 .generation-node {
   width: 246px;
   max-width: 246px;
+  overflow: visible;
   border: 1px solid rgba(60, 60, 67, 0.14);
   border-left: 4px solid var(--accent);
   border-radius: 16px;
@@ -3525,8 +3581,8 @@ body[data-theme="dark"] .generation-node {
 }
 
 .node-handle {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border: 4px solid rgba(255, 255, 255, 0.9);
   background: var(--accent-2);
 }

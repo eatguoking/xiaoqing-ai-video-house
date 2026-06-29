@@ -119,6 +119,7 @@ function requestBody(input: {
   prompt: string;
   imageUrl: string;
   ratio: string;
+  resolution: string;
   duration: number;
   camera: string;
   variants: number;
@@ -127,6 +128,7 @@ function requestBody(input: {
     model: input.model,
     prompt: input.prompt,
     ratio: input.ratio,
+    resolution: input.resolution,
     duration: input.duration,
     camera: input.camera,
     n: input.variants,
@@ -144,7 +146,8 @@ function requestBody(input: {
       imageUrl: input.imageUrl,
       duration: input.duration,
       ratio: input.ratio,
-      size: "1024x1792",
+      size: input.resolution,
+      resolution: input.resolution,
       count: input.variants,
       camera: input.camera,
       variants: input.variants
@@ -162,6 +165,7 @@ function videoAsset(input: {
   videoUrl: string;
   imageUrl?: string;
   ratio?: string;
+  resolution?: string;
   duration?: number;
   camera?: string;
   variants?: number;
@@ -179,6 +183,7 @@ function videoAsset(input: {
     prompt: input.prompt,
     imageUrl: input.imageUrl ?? "",
     ratio: input.ratio ?? "9:16",
+    resolution: input.resolution ?? "1080x1920",
     duration: input.duration ?? 5,
     camera: input.camera ?? "slow push-in",
     variants: input.variants ?? 1,
@@ -234,6 +239,7 @@ export async function POST(request: Request) {
   const prompt = body.input?.prompt || body.prompt || "slow push-in, emotional close-up, vertical video";
   const imageUrl = body.input?.imageUrl || body.imageUrl || "";
   const ratio = String(body.input?.ratio || body.ratio || "9:16");
+  const resolution = String(body.input?.resolution || body.resolution || "1080x1920");
   const duration = Number(body.input?.duration || body.duration || 5) || 5;
   const camera = String(body.input?.camera || body.camera || "slow push-in");
   const variants = Number(body.input?.variants || body.variants || 1) || 1;
@@ -245,6 +251,7 @@ export async function POST(request: Request) {
     prompt,
     imageUrl,
     ratio,
+    resolution,
     duration,
     camera,
     variants
@@ -362,6 +369,7 @@ export async function POST(request: Request) {
         videoUrl,
         imageUrl,
         ratio,
+        resolution,
         duration,
         camera,
         variants,
@@ -421,6 +429,7 @@ export async function POST(request: Request) {
     prompt,
     imageUrl,
     ratio,
+    resolution,
     duration,
     camera,
     variants,

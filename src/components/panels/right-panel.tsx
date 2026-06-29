@@ -72,9 +72,18 @@ const labels = {
     aiInput: "AI 输入 / 在这里输入需求",
     aiInputHelp: "例如：要生成的剧情、画面、风格、镜头运动或视频要求。",
     ratio: "画幅",
+    size: "分辨率",
+    resolution: "视频分辨率",
     variants: "变体",
     duration: "时长",
     camera: "镜头",
+    style: "风格",
+    length: "长度",
+    language: "语言",
+    temperature: "创意强度",
+    parameters: "节点参数",
+    localVoice: "本地音频节点：拖入或上传音频后用于预览、串联和导出。",
+    exportNode: "导出节点：用于收尾工作流；完整导出请使用顶部导出按钮。",
     runAi: "生成当前节点 / Run AI",
     outputNote: "输出位置：生成后结果会出现在底部 AI Output / Assets 区域。"
   },
@@ -111,13 +120,29 @@ const labels = {
     aiInput: "AI Input / enter requirements here",
     aiInputHelp: "For example: plot, image, style, camera movement, or video requirements.",
     ratio: "Ratio",
+    size: "Resolution",
+    resolution: "Video resolution",
     variants: "Variants",
     duration: "Duration",
     camera: "Camera",
+    style: "Style",
+    length: "Length",
+    language: "Language",
+    temperature: "Creativity",
+    parameters: "Node parameters",
+    localVoice: "Local audio node: drag or upload audio for preview, linking, and export.",
+    exportNode: "Export node: use it to close the workflow; use the top export button for packages.",
     runAi: "Run current node / Run AI",
     outputNote: "Output location: generated results appear in the bottom AI Output / Assets area."
   }
 } as const;
+
+const ratioOptions = ["1:1", "9:16", "16:9", "3:4", "4:3", "2:3", "3:2"];
+const imageSizeOptions = ["1024x1024", "1024x1792", "1792x1024", "1152x1536", "1536x1152", "1024x1536", "1536x1024"];
+const videoResolutionOptions = ["720x1280", "1080x1920", "1280x720", "1920x1080", "1024x1024"];
+const styleOptions = ["短剧", "电影感", "悬疑", "搞笑", "热血", "写实"];
+const lengthOptions = ["短", "中", "长"];
+const languageOptions = ["中文", "English", "中英双语"];
 
 const tagClass: Record<string, string> = {
   text: "tag-text",
@@ -197,10 +222,16 @@ export function RightPanel({
   const canSplitStoryboard = data?.kind === "storyboard" && Boolean(data.assetContent || data.assetPreview || prompt);
   const canGenerateImageChildren = data?.kind === "storyboard" && imageChildCount > 0 && !batchRunning;
   const canEditImage = data?.kind === "image" && Boolean(data.assetUrl);
-  const nodeRatio = data?.ratio ?? "9:16";
+  const nodeRatio = data?.ratio ?? (data?.kind === "image" ? "1:1" : "9:16");
+  const nodeSize = data?.size ?? (data?.kind === "image" ? "1024x1024" : "");
+  const nodeResolution = data?.resolution ?? "1080x1920";
   const nodeVariants = data?.variants ?? 1;
   const nodeDuration = data?.duration ?? 5;
   const nodeCamera = data?.camera ?? "slow push-in";
+  const nodeStyle = data?.style ?? "短剧";
+  const nodeLength = data?.length ?? "中";
+  const nodeLanguage = data?.language ?? "中文";
+  const nodeTemperature = data?.temperature ?? 0.8;
 
   const filteredOptions = useMemo(() => {
     const query = modelQuery.trim().toLowerCase();
@@ -413,54 +444,91 @@ export function RightPanel({
           </small>
         </label>
 
-        <div className="parameter-grid">
-          <label>
-            {t.ratio}
-            <select
-              value={nodeRatio}
-              onChange={(event) => onNodeDataChange({ ratio: event.target.value })}
-              disabled={!selectedNode}
-            >
-              <option>9:16</option>
-              <option>16:9</option>
-              <option>1:1</option>
-            </select>
-          </label>
-          <label>
-            {t.variants}
-            <input
-              value={nodeVariants}
-              type="number"
-              min="1"
-              max="8"
-              disabled={!selectedNode}
-              onChange={(event) => onNodeDataChange({ variants: Number(event.target.value) || 1 })}
-            />
-          </label>
-          <label>
-            {t.duration}
-            <input
-              value={nodeDuration}
-              type="number"
-              min="1"
-              max="15"
-              disabled={!selectedNode}
-              onChange={(event) => onNodeDataChange({ duration: Number(event.target.value) || 5 })}
-            />
-          </label>
-          <label>
-            {t.camera}
-            <select
-              value={nodeCamera}
-              onChange={(event) => onNodeDataChange({ camera: event.target.value })}
-              disabled={!selectedNode}
-            >
-              <option>slow push-in</option>
-              <option>static</option>
-              <option>handheld</option>
-            </select>
-          </label>
-        </div>
+        <div className="panel-section-title">{t.parameters}</div>
+        {data?.kind === "image" ? (
+          <div className="parameter-grid">
+            <label>
+              {t.ratio}
+              <select value={nodeRatio} onChange={(event) => onNodeDataChange({ ratio: event.target.value })}>
+                {ratioOptions.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label>
+              {t.size}
+              <select value={nodeSize} onChange={(event) => onNodeDataChange({ size: event.target.value })}>
+                {imageSizeOptions.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label>
+              {t.variants}
+              <input value={nodeVariants} type="number" min="1" max="4" onChange={(event) => onNodeDataChange({ variants: Number(event.target.value) || 1 })} />
+            </label>
+          </div>
+        ) : data?.kind === "video" ? (
+          <div className="parameter-grid">
+            <label>
+              {t.duration}
+              <input value={nodeDuration} type="number" min="1" max="15" onChange={(event) => onNodeDataChange({ duration: Number(event.target.value) || 5 })} />
+            </label>
+            <label>
+              {t.ratio}
+              <select value={nodeRatio} onChange={(event) => onNodeDataChange({ ratio: event.target.value })}>
+                <option>9:16</option>
+                <option>16:9</option>
+                <option>1:1</option>
+              </select>
+            </label>
+            <label>
+              {t.resolution}
+              <select value={nodeResolution} onChange={(event) => onNodeDataChange({ resolution: event.target.value })}>
+                {videoResolutionOptions.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label>
+              {t.camera}
+              <select value={nodeCamera} onChange={(event) => onNodeDataChange({ camera: event.target.value })}>
+                <option>slow push-in</option>
+                <option>static</option>
+                <option>handheld</option>
+                <option>pan left</option>
+                <option>zoom in</option>
+              </select>
+            </label>
+            <label>
+              {t.variants}
+              <input value={nodeVariants} type="number" min="1" max="4" onChange={(event) => onNodeDataChange({ variants: Number(event.target.value) || 1 })} />
+            </label>
+          </div>
+        ) : data?.kind === "script" || data?.kind === "storyboard" || data?.kind === "character" ? (
+          <div className="parameter-grid">
+            <label>
+              {t.style}
+              <select value={nodeStyle} onChange={(event) => onNodeDataChange({ style: event.target.value })}>
+                {styleOptions.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label>
+              {t.length}
+              <select value={nodeLength} onChange={(event) => onNodeDataChange({ length: event.target.value })}>
+                {lengthOptions.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label>
+              {t.language}
+              <select value={nodeLanguage} onChange={(event) => onNodeDataChange({ language: event.target.value })}>
+                {languageOptions.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label>
+              {t.temperature}
+              <input value={nodeTemperature} type="number" min="0" max="1.5" step="0.1" onChange={(event) => onNodeDataChange({ temperature: Number(event.target.value) || 0.8 })} />
+            </label>
+          </div>
+        ) : data?.kind === "voice" ? (
+          <div className="model-note">{t.localVoice}</div>
+        ) : data?.kind === "export" ? (
+          <div className="model-note">{t.exportNode}</div>
+        ) : null}
 
         <button className="generate-button" type="button" onClick={onGenerate} disabled={!canGenerate}>
           <Wand2 size={17} />

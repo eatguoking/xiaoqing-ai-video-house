@@ -133,6 +133,7 @@ function videoAsset(input: {
   videoUrl: string;
   imageUrl?: string;
   ratio?: string;
+  resolution?: string;
   duration?: number;
   camera?: string;
   variants?: number;
@@ -150,6 +151,7 @@ function videoAsset(input: {
     prompt: input.prompt,
     imageUrl: input.imageUrl ?? "",
     ratio: input.ratio ?? "9:16",
+    resolution: input.resolution ?? "1080x1920",
     duration: input.duration ?? 5,
     camera: input.camera ?? "slow push-in",
     variants: input.variants ?? 1,
@@ -319,6 +321,7 @@ export async function GET(
   const prompt = stringValue(parsed.meta.prompt) || storedJob.prompt;
   const imageUrl = stringValue(parsed.meta.imageUrl);
   const ratio = stringValue(parsed.meta.ratio) || "9:16";
+  const resolution = stringValue(parsed.meta.resolution) || "1080x1920";
   const duration = Number(parsed.meta.duration ?? 5) || 5;
   const camera = stringValue(parsed.meta.camera) || "slow push-in";
   const variants = Number(parsed.meta.variants ?? 1) || 1;
@@ -333,6 +336,7 @@ export async function GET(
             videoUrl,
             imageUrl,
             ratio,
+            resolution,
             duration,
             camera,
             variants,
