@@ -1,7 +1,7 @@
 "use client";
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { CheckCircle2, Clock3, Film, Image, Loader2, Mic2, PenLine, Plus, Sparkles, UserRound } from "lucide-react";
+import { CheckCircle2, Clock3, Film, Image, Loader2, Mic2, PenLine, Sparkles, UserRound } from "lucide-react";
 
 export type GenerationNodeData = {
   title: string;
@@ -32,7 +32,6 @@ export type GenerationNodeData = {
   skillId?: string;
   skillIds?: string[];
   autoSkillEnabled?: boolean;
-  onQuickAdd?: (kind: GenerationNodeData["kind"]) => void;
 };
 
 const iconMap = {
@@ -57,10 +56,6 @@ export function GenerationNode({ data, selected }: NodeProps) {
   const nodeData = data as GenerationNodeData;
   const Icon = iconMap[nodeData.kind] ?? Sparkles;
   const isBusy = nodeData.status === "queued" || nodeData.status === "running";
-  const recommendedKind = nextKind(nodeData.kind);
-  const quickKinds = recommendedKind
-    ? [recommendedKind, ...allQuickKinds.filter((kind) => kind !== recommendedKind)]
-    : allQuickKinds;
 
   return (
     <div className={`generation-node ${selected ? "is-selected" : ""} node-${nodeData.kind}`}>
@@ -91,47 +86,7 @@ export function GenerationNode({ data, selected }: NodeProps) {
         {isBusy ? <Loader2 size={13} className="spin" /> : <Clock3 size={13} />}
         {statusText[nodeData.status]}
       </div>
-      <div className="node-quick-add" onPointerDown={(event) => event.stopPropagation()}>
-        <button className="node-quick-add-button" type="button" aria-label="Add connected node">
-          <Plus size={16} />
-        </button>
-        <div className="node-quick-menu">
-          {quickKinds.map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                nodeData.onQuickAdd?.(kind);
-              }}
-            >
-              {kindLabel[kind]}
-            </button>
-          ))}
-        </div>
-      </div>
       <Handle type="source" position={Position.Right} className="node-handle" />
     </div>
   );
-}
-
-const allQuickKinds: GenerationNodeData["kind"][] = ["script", "storyboard", "character", "image", "video", "voice", "export"];
-
-const kindLabel: Record<GenerationNodeData["kind"], string> = {
-  script: "剧本",
-  storyboard: "分镜",
-  image: "图片",
-  video: "视频",
-  voice: "语音",
-  export: "导出",
-  character: "角色"
-};
-
-function nextKind(kind: GenerationNodeData["kind"]): GenerationNodeData["kind"] | null {
-  if (kind === "script") return "storyboard";
-  if (kind === "storyboard") return "image";
-  if (kind === "image") return "video";
-  if (kind === "video" || kind === "voice") return "export";
-  if (kind === "character") return "image";
-  return null;
 }

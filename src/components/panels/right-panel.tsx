@@ -269,6 +269,42 @@ export function RightPanel({
     setModelQuery("");
   }, [selectedNodeId, data?.kind]);
 
+  const workflowKindLabel =
+    data?.kind === "script"
+      ? locale === "zh" ? "剧本" : "Script"
+      : data?.kind === "storyboard"
+        ? locale === "zh" ? "分镜" : "Storyboard"
+        : data?.kind === "image"
+          ? locale === "zh" ? "图片" : "Image"
+          : data?.kind === "video"
+            ? locale === "zh" ? "视频" : "Video"
+            : data?.kind === "character"
+              ? locale === "zh" ? "角色" : "Character"
+              : data?.kind === "voice"
+                ? locale === "zh" ? "语音" : "Voice"
+                : data?.kind === "export"
+                  ? locale === "zh" ? "导出" : "Export"
+                  : t.noNode;
+
+  const workflowNextLabel =
+    data?.kind === "script"
+      ? locale === "zh" ? "下一步：分镜" : "Next: Storyboard"
+      : data?.kind === "storyboard"
+        ? locale === "zh" ? "下一步：图片" : "Next: Image"
+        : data?.kind === "image"
+          ? locale === "zh" ? "下一步：视频" : "Next: Video"
+          : data?.kind === "video"
+            ? locale === "zh" ? "下一步：导出" : "Next: Export"
+            : data?.kind === "character"
+              ? locale === "zh" ? "下一步：图片" : "Next: Image"
+              : data?.kind === "voice"
+                ? locale === "zh" ? "下一步：导出" : "Next: Export"
+                : t.noNode;
+
+  const workflowSourceLabel = upstreamText
+    ? (locale === "zh" ? "来自上游节点" : "From upstream node")
+    : (locale === "zh" ? "来自右侧输入框" : "From the input box");
+
   return (
     <aside className="right-panel">
       <section className="inspector-section current-node-section">
@@ -353,16 +389,24 @@ export function RightPanel({
 
       <section className="inspector-section workflow-panel">
         <div className="panel-section-title">{t.workflow}</div>
-        {upstreamText ? (
-          <div className="workflow-upstream">
-            <span>{t.upstreamReady}</span>
+        <div className="workflow-summary">
+          <div className="workflow-summary-row">
+            <span>{workflowKindLabel}</span>
+            <strong>{workflowNextLabel}</strong>
+          </div>
+          <div className="workflow-summary-row">
+            <span>{locale === "zh" ? "输入来源" : "Input source"}</span>
+            <strong>{workflowSourceLabel}</strong>
+          </div>
+        </div>
+        <div className="workflow-upstream">
+          <span>{upstreamText ? t.upstreamReady : t.noUpstream}</span>
+          {upstreamText ? (
             <button type="button" onClick={onUseUpstreamInput}>
               {t.useInput}
             </button>
-          </div>
-        ) : (
-          <span className="workflow-empty">{t.noUpstream}</span>
-        )}
+          ) : null}
+        </div>
         <div className="workflow-actions">
           <button type="button" onClick={onCreateNextNode} disabled={!selectedNode || !canCreateNext}>
             <ArrowRight size={15} />

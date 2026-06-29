@@ -1715,16 +1715,6 @@ export function CanvasWorkspace() {
     [markDirty, setEdges, setNodes]
   );
 
-  const handleQuickAddNode = useCallback(
-    (sourceNodeId: string, kind: GenerationNodeData["kind"]) => {
-      const sourceNode = nodes.find((node) => node.id === sourceNodeId);
-      if (!sourceNode) return;
-      const input = nodeOutputText(sourceNode) || sourceNode.data.input || prompt;
-      createWorkflowNode(kind, sourceNode, input, { x: 320, y: 0 });
-    },
-    [createWorkflowNode, nodes, prompt]
-  );
-
   const handleCreateNextNode = useCallback(() => {
     if (!selectedNode) return;
     const kind = nextWorkflowKind(selectedNode.data.kind);
@@ -1769,15 +1759,8 @@ export function CanvasWorkspace() {
   );
 
   const nodesForRender = useMemo(
-    () =>
-      nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          onQuickAdd: (kind: GenerationNodeData["kind"]) => handleQuickAddNode(node.id, kind)
-        }
-      })),
-    [handleQuickAddNode, nodes]
+    () => nodes,
+    [nodes]
   );
 
   const exportMarkdown = useMemo(() => buildExportMarkdown(exportBundle), [exportBundle]);
