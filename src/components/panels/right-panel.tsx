@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Node } from "@xyflow/react";
-import { ArrowRight, Copy, Images, ListPlus, Paintbrush, RefreshCw, Search, Trash2, Wand2 } from "lucide-react";
+import { ArrowRight, Copy, Images, LibraryBig, ListPlus, Paintbrush, RefreshCw, Search, Trash2, Wand2 } from "lucide-react";
 import type { GenerationNodeData } from "@/components/nodes/generation-node";
 import type { ExternalModelOption, Locale } from "@/components/canvas/canvas-workspace";
+import type { SkillRecord } from "@/components/panels/skill-library-modal";
 
 type ModelsResponse = {
   script?: ExternalModelOption[];
@@ -22,8 +23,10 @@ type Props = {
   imageChildCount: number;
   batchRunning: boolean;
   selectedModelId: string;
+  skills: SkillRecord[];
   onPromptChange: (value: string) => void;
   onModelChange: (value: string) => void;
+  onOpenSkillLibrary: () => void;
   onRefreshModels: () => void;
   onNodeDataChange: (patch: Partial<GenerationNodeData>) => void;
   onDuplicateNode: () => void;
@@ -69,6 +72,9 @@ const labels = {
     configureApi: "配置API",
     noMatching: "没有匹配的模型",
     noSelected: "未选择模型",
+    skill: "Skill",
+    noSkill: "不使用 Skill",
+    manageSkills: "管理 Skill",
     aiInput: "AI 输入 / 在这里输入需求",
     aiInputHelp: "例如：要生成的剧情、画面、风格、镜头运动或视频要求。",
     ratio: "画幅",
@@ -117,6 +123,9 @@ const labels = {
     configureApi: "Configure API",
     noMatching: "No matching models",
     noSelected: "No model selected",
+    skill: "Skill",
+    noSkill: "No Skill",
+    manageSkills: "Manage Skills",
     aiInput: "AI Input / enter requirements here",
     aiInputHelp: "For example: plot, image, style, camera movement, or video requirements.",
     ratio: "Ratio",
@@ -189,8 +198,10 @@ export function RightPanel({
   imageChildCount,
   batchRunning,
   selectedModelId,
+  skills,
   onPromptChange,
   onModelChange,
+  onOpenSkillLibrary,
   onRefreshModels,
   onNodeDataChange,
   onDuplicateNode,
@@ -209,6 +220,9 @@ export function RightPanel({
   const data = selectedNode?.data;
   const selectedNodeId = selectedNode?.id;
   const options = getOptions(data?.kind, models);
+  const applicableSkills = skills.filter((skill) =>
+    skill.enabled && data?.kind && (skill.appliesTo.includes("all") || skill.appliesTo.includes(data.kind))
+  );
   const selectedModel = options.find((model) => model.id === selectedModelId);
   const requiresModel =
     data?.kind === "script" ||
@@ -433,6 +447,28 @@ export function RightPanel({
         <div className="selected-model-line">
           {selectedModel ? `${selectedModel.sourceName} / ${selectedModel.model}` : t.noSelected}
         </div>
+      </section>
+
+      <section className="inspector-section skill-picker">
+        <div className="model-picker-head">
+          <span>{t.skill}</span>
+          <button type="button" onClick={onOpenSkillLibrary}>
+            <LibraryBig size={14} />
+            {t.manageSkills}
+          </button>
+        </div>
+        <label className="field">
+          <select
+            value={data?.skillId ?? ""}
+            onChange={(event) => onNodeDataChange({ skillId: event.target.value || undefined })}
+            disabled={!selectedNode}
+          >
+            <option value="">{t.noSkill}</option>
+            {applicableSkills.map((skill) => (
+              <option key={skill.id} value={skill.id}>{skill.name}</option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="inspector-section ai-input-section">

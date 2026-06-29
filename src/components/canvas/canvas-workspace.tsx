@@ -41,6 +41,7 @@ import { BottomPanel, type Asset } from "@/components/panels/bottom-panel";
 import { LeftPanel, type NodeKind } from "@/components/panels/left-panel";
 import { RightPanel } from "@/components/panels/right-panel";
 import { SettingsModal } from "@/components/panels/settings-modal";
+import { SkillLibraryModal, defaultSkills, type SkillRecord } from "@/components/panels/skill-library-modal";
 
 const appName = "\u5c0f\u6674\u7684AI\u5f71\u89c6\u5999\u5999\u5c4b";
 export type Locale = "zh" | "en";
@@ -367,6 +368,7 @@ type ActivePipeline = {
 const noModelLabel = "No external model";
 const editedImageEventType = "xiaoqing:image-edited";
 const editedImageStorageKey = "xiaoqing.imageEdited";
+const skillStorageKey = "xiaoqing.skills";
 
 type EditedImageEvent = {
   type?: string;
@@ -1080,6 +1082,21 @@ async function readJsonResponse<T extends Record<string, unknown>>(response: Res
   }
 }
 
+function applySkillToInput(input: string, nodeKind: GenerationNodeData["kind"], skill?: SkillRecord) {
+  if (!skill || !skill.enabled) return input;
+  if (!skill.appliesTo.includes("all") && !skill.appliesTo.includes(nodeKind)) return input;
+
+  const wrapped = skill.promptTemplate?.trim()
+    ? skill.promptTemplate.replaceAll("{{input}}", input)
+    : input;
+
+  return [
+    skill.systemPrompt ? `[Skill System]\n${skill.systemPrompt}` : "",
+    wrapped,
+    skill.outputFormat ? `[Output Format]\n${skill.outputFormat}` : ""
+  ].filter(Boolean).join("\n\n");
+}
+
 export function CanvasWorkspace() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [theme, setTheme] = useState<ThemeMode>("light");
@@ -1110,6 +1127,8 @@ export function CanvasWorkspace() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateRecord[]>([]);
+  const [skillLibraryOpen, setSkillLibraryOpen] = useState(false);
+  const [skills, setSkills] = useState<SkillRecord[]>(defaultSkills);
   const [materialPanelOpen, setMaterialPanelOpen] = useState(false);
   const [materialSourceAsset, setMaterialSourceAsset] = useState<Asset | null>(null);
   const [extractedMaterials, setExtractedMaterials] = useState<ExtractedMaterial[]>([]);
@@ -1246,6 +1265,21 @@ export function CanvasWorkspace() {
     if (savedLocale === "zh" || savedLocale === "en") setLocale(savedLocale);
     if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
   }, []);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(skillStorageKey);
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) setSkills(parsed);
+    } catch {
+      setSkills(defaultSkills);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(skillStorageKey, JSON.stringify(skills));
+  }, [skills]);
 
   useEffect(() => {
     document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
@@ -2546,6 +2580,8 @@ export function CanvasWorkspace() {
     }
 
     const displayModel = `${selectedModel.sourceName} / ${selectedModel.model}`;
+    const selectedSkill = skills.find((skill) => skill.id === selectedNode.data.skillId);
+    const skilledInput = applySkillToInput(nodeInput, kind, selectedSkill);
 
     try {
       if (kind === "script" || kind === "storyboard" || kind === "character") {
@@ -2557,7 +2593,7 @@ export function CanvasWorkspace() {
             modelId: selectedModelId,
             projectId,
             input: {
-              theme: nodeInput,
+              theme: skilledInput,
               kind,
               projectId,
               style: selectedNode.data.style,
@@ -2602,7 +2638,7 @@ export function CanvasWorkspace() {
       const mediaInput =
         kind === "video"
           ? {
-              prompt: nodeInput,
+              prompt: skilledInput,
               imageUrl: sourceImageUrl,
               ratio: selectedNode.data.ratio ?? "9:16",
               resolution: selectedNode.data.resolution ?? "1080x1920",
@@ -2611,7 +2647,7 @@ export function CanvasWorkspace() {
               variants: selectedNode.data.variants ?? 1
             }
           : {
-              prompt: nodeInput,
+              prompt: skilledInput,
               ratio: selectedNode.data.ratio ?? "1:1",
               size: selectedNode.data.size ?? "1024x1024",
               variants: selectedNode.data.variants ?? 1,
@@ -2661,7 +2697,7 @@ export function CanvasWorkspace() {
         displayModel
       );
     }
-  }, [applyAssetToNode, models, pollJob, projectId, prompt, selectedModelId, selectedNode, sourceImageUrl, updateNodeData, updateNodeStatus, upstreamText]);
+  }, [applyAssetToNode, models, pollJob, projectId, prompt, selectedModelId, selectedNode, skills, sourceImageUrl, updateNodeData, updateNodeStatus, upstreamText]);
 
   return (
     <main className="workspace-shell">
@@ -2761,7 +2797,12 @@ export function CanvasWorkspace() {
       </header>
 
       <div className="workspace-body">
-        <LeftPanel locale={locale} activeKind={selectedNode?.data.kind} onAddNode={handleAddNode} />
+        <LeftPanel
+          locale={locale}
+          activeKind={selectedNode?.data.kind}
+          onAddNode={handleAddNode}
+          onOpenSkillLibrary={() => setSkillLibraryOpen(true)}
+        />
         <section className="canvas-area">
           <ReactFlow
             nodes={nodesForRender}
@@ -2804,8 +2845,10 @@ export function CanvasWorkspace() {
           imageChildCount={selectedImageChildCount}
           batchRunning={batchRunning}
           selectedModelId={selectedModelId}
+          skills={skills}
           onPromptChange={handleNodeInputChange}
           onModelChange={setSelectedModelId}
+          onOpenSkillLibrary={() => setSkillLibraryOpen(true)}
           onRefreshModels={loadModels}
           onNodeDataChange={(patch) => selectedNode && updateNodeData(selectedNode.id, patch)}
           onDuplicateNode={handleDuplicateNode}
@@ -2892,6 +2935,13 @@ export function CanvasWorkspace() {
         onSave={savePromptTemplate}
         onDelete={deletePromptTemplate}
         onApply={applyPromptTemplate}
+      />
+      <SkillLibraryModal
+        open={skillLibraryOpen}
+        locale={locale}
+        skills={skills}
+        onClose={() => setSkillLibraryOpen(false)}
+        onChange={setSkills}
       />
       <PipelineModal
         open={pipelineOpen}

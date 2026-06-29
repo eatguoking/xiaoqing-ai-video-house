@@ -6,6 +6,7 @@ import {
   Film,
   Folder,
   Image,
+  LibraryBig,
   MessageSquareText,
   Mic2,
   PenLine,
@@ -41,6 +42,7 @@ type Props = {
   locale: Locale;
   activeKind?: NodeKind;
   onAddNode: (item: LibraryItem) => void;
+  onOpenSkillLibrary: () => void;
 };
 
 type StaticNavItem = {
@@ -57,6 +59,7 @@ const labels = {
     project: "项目",
     assetLibrary: "素材库",
     characterLibrary: "角色库",
+    skillLibrary: "Skill 库",
     promptLibrary: "提示词库",
     modelLibrary: "模型库",
     soundLibrary: "音效库",
@@ -82,6 +85,7 @@ const labels = {
     project: "Project",
     assetLibrary: "Asset Library",
     characterLibrary: "Character Library",
+    skillLibrary: "Skill Library",
     promptLibrary: "Prompt Library",
     modelLibrary: "Model Library",
     soundLibrary: "Sound Library",
@@ -102,11 +106,12 @@ const labels = {
   }
 } as const;
 
-export function LeftPanel({ locale, activeKind = "script", onAddNode }: Props) {
+export function LeftPanel({ locale, activeKind = "script", onAddNode, onOpenSkillLibrary }: Props) {
   const t = labels[locale];
   const assetNav: StaticNavItem[] = [
     { key: "assets", icon: Folder, title: t.assetLibrary },
     { key: "characters", icon: UserRound, title: t.characterLibrary },
+    { key: "skills", icon: LibraryBig, title: t.skillLibrary },
     { key: "prompts", icon: MessageSquareText, title: t.promptLibrary },
     { key: "models", icon: Boxes, title: t.modelLibrary },
     { key: "sounds", icon: Volume2, title: t.soundLibrary }
@@ -142,7 +147,12 @@ export function LeftPanel({ locale, activeKind = "script", onAddNode }: Props) {
   const renderStaticItem = (item: StaticNavItem) => {
     const Icon = item.icon;
     return (
-      <button className={`side-nav-item side-nav-${item.key}`} key={item.key} type="button">
+      <button
+        className={`side-nav-item side-nav-${item.key}`}
+        key={item.key}
+        type="button"
+        onClick={item.key === "skills" ? onOpenSkillLibrary : undefined}
+      >
         <span className="side-nav-icon" aria-hidden="true">
           <Icon size={14} />
         </span>
