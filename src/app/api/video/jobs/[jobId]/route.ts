@@ -40,7 +40,8 @@ function readStatus(payload: unknown, configuredPath?: string | null): "queued" 
   const configured = readStringByPath(payload, configuredPath);
   if (configured) return normalizeStatusText(configured);
 
-  if (!isRecord(payload)) return "running";
+  if (!isRecord(payload)) return "failed";
+  if (Object.keys(payload).length === 0) return "failed";
   const data = isRecord(payload.data) ? payload.data : firstRecord(payload.data);
   const result = isRecord(payload.result) ? payload.result : undefined;
   const statusText = (
@@ -53,7 +54,7 @@ function readStatus(payload: unknown, configuredPath?: string | null): "queued" 
     stringValue(result?.state)
   );
 
-  return normalizeStatusText(statusText);
+  return statusText ? normalizeStatusText(statusText) : "running";
 }
 
 function readError(payload: unknown, configuredPath?: string | null) {
@@ -293,7 +294,7 @@ export async function GET(
     });
   }
 
-  const payload = await response.json().catch(() => ({}));
+  const payload = await response.json().catch(() => null);
   const status = readStatus(payload, selected.responseStatusPath);
   const videoUrl = readVideoUrl(payload, selected.responseUrlPath);
   const prompt = stringValue(parsed.meta.prompt) || storedJob.prompt;
@@ -303,7 +304,7 @@ export async function GET(
   const camera = stringValue(parsed.meta.camera) || "slow push-in";
   const variants = Number(parsed.meta.variants ?? 1) || 1;
   const assets =
-    videoUrl && (status === "succeeded" || status === "running")
+    videoUrl && status === "succeeded"
       ? [
           videoAsset({
             id: storedJob.id,
@@ -321,7 +322,7 @@ export async function GET(
           })
         ]
       : parsed.assets;
-  const nextStatus = videoUrl ? "succeeded" : status;
+  const nextStatus = status === "failed" ? "failed" : videoUrl ? "succeeded" : status;
 
   await prisma.generationJob.update({
     where: { id: storedJob.id },

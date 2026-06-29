@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
+import { uniqueId } from "@/lib/id";
 
 export const runtime = "nodejs";
 
@@ -95,10 +96,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const body = await request.json();
   const incomingAssets = Array.isArray(body.assets) ? body.assets : [body];
-  const saved = [];
+  const operations = [];
 
   for (const asset of incomingAssets) {
-    const id = asset.id ?? `asset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const id = asset.id ?? uniqueId("asset");
     const projectId = String(asset.projectId ?? body.projectId ?? "").trim() || null;
     const payload = {
       ...(asset.payload ?? {})
@@ -110,7 +111,7 @@ export async function POST(request: Request) {
       payload.videoUrl = asset.url;
     }
 
-    const record = await prisma.asset.upsert({
+    operations.push(prisma.asset.upsert({
       where: { id },
       create: {
         id,
@@ -129,10 +130,10 @@ export async function POST(request: Request) {
         payloadJson: JSON.stringify(payload),
         sourceJobId: asset.sourceJobId ?? null
       }
-    });
-    saved.push(record);
+    }));
   }
 
+  const saved = await prisma.$transaction(operations);
   return NextResponse.json({ saved: saved.length });
 }
 
@@ -160,13 +161,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ deleted: 0, ids: [], filesDeleted: 0, fileErrors: 0 });
   }
 
-  await prisma.asset.deleteMany({
-    where: {
-      projectId,
-      id: { in: deletableIds }
-    }
-  });
-
   let filesDeleted = 0;
   let fileErrors = 0;
   const paths = assets.flatMap((asset) => assetLocalFilePaths(parsePayload(asset.payloadJson)));
@@ -178,6 +172,13 @@ export async function DELETE(request: Request) {
       fileErrors += 1;
     }
   }
+
+  await prisma.asset.deleteMany({
+    where: {
+      projectId,
+      id: { in: deletableIds }
+    }
+  });
 
   return NextResponse.json({
     deleted: deletableIds.length,

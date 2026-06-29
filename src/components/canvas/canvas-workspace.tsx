@@ -1405,7 +1405,9 @@ export function CanvasWorkspace() {
 
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
-      markDirty();
+      if (changes.some((change) => change.type !== "select")) {
+        markDirty();
+      }
       onNodesChange(changes);
     },
     [markDirty, onNodesChange]
