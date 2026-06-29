@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { uniqueId } from "@/lib/id";
 
 const kinds = ["script", "storyboard", "character", "image", "video", "voice"] as const;
 
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
 
   const template = await prisma.promptTemplate.create({
     data: {
-      id: `template_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: uniqueId("template"),
       projectId: scope === "project" ? projectId : null,
       scope,
       kind: normalizeKind(body.kind),
@@ -54,16 +55,32 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Template id is required" }, { status: 400 });
   }
 
-  const template = await prisma.promptTemplate.update({
-    where: { id },
-    data: {
-      title: String(body.title ?? "").trim() || "Untitled Template",
-      kind: normalizeKind(body.kind),
-      content: String(body.content ?? "").trim(),
-      scope: body.scope === "global" ? "global" : "project",
-      projectId: body.scope === "global" ? null : String(body.projectId ?? "").trim() || null
-    }
-  });
+  const template = await prisma.promptTemplate
+    .update({
+      where: { id },
+      data: {
+        title: String(body.title ?? "").trim() || "Untitled Template",
+        kind: normalizeKind(body.kind),
+        content: String(body.content ?? "").trim(),
+        scope: body.scope === "global" ? "global" : "project",
+        projectId: body.scope === "global" ? null : String(body.projectId ?? "").trim() || null
+      }
+    })
+    .catch((error: unknown) => {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "P2025"
+      ) {
+        return null;
+      }
+      throw error;
+    });
+
+  if (!template) {
+    return NextResponse.json({ error: "Template not found" }, { status: 404 });
+  }
 
   return NextResponse.json(template);
 }

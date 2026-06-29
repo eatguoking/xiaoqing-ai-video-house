@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { writeApiLog } from "@/lib/api/api-log";
 import { friendlyApiError } from "@/lib/api/friendly-error";
 import { readStringByPath } from "@/lib/api/response-path";
+import { uniqueId } from "@/lib/id";
 import { parseModelSelection } from "@/lib/models/selection";
 
 function makeUrl(baseUrl: string, path: string) {
@@ -234,7 +235,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const jobId = `image_${Date.now()}`;
+  const jobId = uniqueId("image");
   const asset = {
     id: `${jobId}_asset_1`,
     projectId,

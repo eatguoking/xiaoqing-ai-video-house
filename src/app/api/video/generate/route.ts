@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { writeApiLog } from "@/lib/api/api-log";
 import { friendlyApiError } from "@/lib/api/friendly-error";
 import { readStringByPath } from "@/lib/api/response-path";
+import { uniqueId } from "@/lib/id";
 import { parseModelSelection } from "@/lib/models/selection";
 
 type JsonRecord = Record<string, unknown>;
@@ -350,7 +351,7 @@ export async function POST(request: Request) {
     responseBody: payload
   });
   const videoUrl = readVideoUrl(payload, selected.responseUrlPath);
-  const jobId = `video_${Date.now()}`;
+  const jobId = uniqueId("video");
 
   if (videoUrl) {
     const asset = videoAsset({

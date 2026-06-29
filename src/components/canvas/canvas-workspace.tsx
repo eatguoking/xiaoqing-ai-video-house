@@ -1066,6 +1066,20 @@ function errorMessage(result: { error?: string; hint?: string }, fallback: strin
   return [result.error || fallback, result.hint].filter(Boolean).join(" ");
 }
 
+async function readJsonResponse<T extends Record<string, unknown>>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text.trim()) return {} as T;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return {
+      error: "The API returned a non-JSON response.",
+      hint: text.slice(0, 500)
+    } as unknown as T;
+  }
+}
+
 export function CanvasWorkspace() {
   const [locale, setLocale] = useState<Locale>("zh");
   const [theme, setTheme] = useState<ThemeMode>("light");
@@ -2334,23 +2348,40 @@ export function CanvasWorkspace() {
     async (job: JobRecord, nodeId: string) => {
       const endpoint = job.kind === "image" ? `/api/image/jobs/${job.id}` : `/api/video/jobs/${job.id}`;
       const timer = window.setInterval(async () => {
-        const response = await fetch(endpoint);
-        const nextJob = (await response.json()) as JobRecord;
-        setJobs((current) => current.map((item) => (item.id === nextJob.id ? nextJob : item)));
-
-        if (nextJob.status === "succeeded" || nextJob.status === "failed") {
-          window.clearInterval(timer);
-          if (nextJob.assets?.length) {
-            setAssets((current) => [...nextJob.assets!, ...current]);
-            applyAssetToNode(nodeId, nextJob.assets[0] as Asset);
+        try {
+          const response = await fetch(endpoint);
+          const nextJob = await readJsonResponse<JobRecord & { hint?: string }>(response);
+          if (!response.ok) {
+            throw new Error(errorMessage(nextJob, `Job polling failed with HTTP ${response.status}.`));
           }
+          setJobs((current) => current.map((item) => (item.id === nextJob.id ? nextJob : item)));
+
+          if (nextJob.status === "succeeded" || nextJob.status === "failed") {
+            window.clearInterval(timer);
+            if (nextJob.assets?.length) {
+              setAssets((current) => [...nextJob.assets!, ...current]);
+              applyAssetToNode(nodeId, nextJob.assets[0] as Asset);
+            }
+            updateNodeStatus(
+              nodeId,
+              nextJob.status,
+              nextJob.status === "succeeded"
+                ? "Generation completed. Result added to assets."
+                : nextJob.error || "Generation failed. Check the external API config.",
+              nextJob.model
+            );
+          }
+        } catch (error) {
+          window.clearInterval(timer);
+          const message = error instanceof Error ? error.message : String(error);
+          setJobs((current) =>
+            current.map((item) => (item.id === job.id ? { ...item, status: "failed", error: message } : item))
+          );
           updateNodeStatus(
             nodeId,
-            nextJob.status,
-            nextJob.status === "succeeded"
-              ? "Generation completed. Result added to assets."
-              : nextJob.error || "Generation failed. Check the external API config.",
-            nextJob.model
+            "failed",
+            `Job polling failed: ${message}`,
+            job.model
           );
         }
       }, job.kind === "video" ? 3000 : 700);
@@ -2369,12 +2400,24 @@ export function CanvasWorkspace() {
       const displayModel = `${model.sourceName} / ${model.model}`;
 
       updateNodeStatus(node.id, "queued", "Batch image job submitted...", displayModel);
-      const response = await fetch("/api/image/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId: model.id, projectId, input: { prompt: input, projectId } })
-      });
-      const job = (await response.json()) as JobRecord & { hint?: string };
+      let response: Response;
+      let job: JobRecord & { hint?: string };
+      try {
+        response = await fetch("/api/image/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ modelId: model.id, projectId, input: { prompt: input, projectId } })
+        });
+        job = await readJsonResponse<JobRecord & { hint?: string }>(response);
+      } catch (error) {
+        updateNodeStatus(
+          node.id,
+          "failed",
+          error instanceof Error ? error.message : String(error),
+          displayModel
+        );
+        return false;
+      }
 
       if (!response.ok) {
         updateNodeStatus(node.id, "failed", errorMessage(job, "External image API failed."), displayModel);
@@ -2428,17 +2471,26 @@ export function CanvasWorkspace() {
     );
 
     let successCount = 0;
-    for (const child of imageChildren) {
-      const ok = await generateImageNode(child, imageModel);
-      if (ok) successCount += 1;
-    }
+    try {
+      for (const child of imageChildren) {
+        const ok = await generateImageNode(child, imageModel);
+        if (ok) successCount += 1;
+      }
 
-    updateNodeStatus(
-      selectedNode.id,
-      successCount === imageChildren.length ? "succeeded" : "failed",
-      `Batch image generation finished: ${successCount}/${imageChildren.length} succeeded.`
-    );
-    setBatchRunning(false);
+      updateNodeStatus(
+        selectedNode.id,
+        successCount === imageChildren.length ? "succeeded" : "failed",
+        `Batch image generation finished: ${successCount}/${imageChildren.length} succeeded.`
+      );
+    } catch (error) {
+      updateNodeStatus(
+        selectedNode.id,
+        "failed",
+        error instanceof Error ? error.message : String(error)
+      );
+    } finally {
+      setBatchRunning(false);
+    }
   }, [edges, generateImageNode, models.image, nodes, selectedNode, updateNodeStatus]);
 
   const handleGenerate = useCallback(async () => {
@@ -2465,90 +2517,104 @@ export function CanvasWorkspace() {
 
     const displayModel = `${selectedModel.sourceName} / ${selectedModel.model}`;
 
-    if (kind === "script" || kind === "storyboard" || kind === "character") {
-      updateNodeStatus(selectedNode.id, "running", "Calling external script API...", displayModel);
-      const response = await fetch("/api/script/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId: selectedModelId, projectId, input: { theme: nodeInput, kind, projectId } })
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        updateNodeStatus(selectedNode.id, "failed", errorMessage(result, "External script API failed."), displayModel);
+    try {
+      if (kind === "script" || kind === "storyboard" || kind === "character") {
+        updateNodeStatus(selectedNode.id, "running", "Calling external script API...", displayModel);
+        const response = await fetch("/api/script/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ modelId: selectedModelId, projectId, input: { theme: nodeInput, kind, projectId } })
+        });
+        const result = await readJsonResponse<{
+          id?: string;
+          output?: { title?: string; logline?: string };
+          error?: string;
+          hint?: string;
+        }>(response);
+        if (!response.ok || !result.id || !result.output) {
+          updateNodeStatus(selectedNode.id, "failed", errorMessage(result, "External script API failed."), displayModel);
+          return;
+        }
+        const nextAsset = {
+          id: result.id,
+          projectId,
+          type: kind === "character" ? "character" : "script",
+          title: result.output.title ?? "Untitled result",
+          preview: result.output.logline ?? "",
+          payload: result.output
+        };
+        setAssets((current) => [nextAsset, ...current.filter((asset) => asset.id !== nextAsset.id)]);
+        updateNodeData(selectedNode.id, {
+          ...assetPatch(nextAsset),
+          model: displayModel
+        });
         return;
       }
-      const nextAsset = {
-        id: result.id,
-        projectId,
-        type: kind === "character" ? "character" : "script",
-        title: result.output.title,
-        preview: result.output.logline,
-        payload: result.output
-      };
-      setAssets((current) => [nextAsset, ...current.filter((asset) => asset.id !== nextAsset.id)]);
-      updateNodeData(selectedNode.id, {
-        ...assetPatch(nextAsset),
-        model: displayModel
-      });
-      return;
-    }
 
-    if (kind === "voice" || kind === "export") {
-      updateNodeStatus(selectedNode.id, "failed", "Only script, image, and video API categories are configured.", displayModel);
-      return;
-    }
-
-    const endpoint = kind === "video" ? "/api/video/generate" : "/api/image/generate";
-    const mediaInput =
-      kind === "video"
-        ? {
-            prompt: nodeInput,
-            imageUrl: sourceImageUrl,
-            ratio: selectedNode.data.ratio ?? "9:16",
-            duration: selectedNode.data.duration ?? 5,
-            camera: selectedNode.data.camera ?? "slow push-in",
-            variants: selectedNode.data.variants ?? 1
-          }
-        : {
-            prompt: nodeInput,
-            ...(isImageEditRun
-              ? {
-                  imageUrl: selectedNode.data.imageEditReferenceUrl || selectedNode.data.assetUrl,
-                  editMode: true
-                }
-              : {})
-          };
-    if (kind === "video" && sourceImageUrl && selectedNode.data.sourceAssetUrl !== sourceImageUrl) {
-      updateNodeData(selectedNode.id, { sourceAssetUrl: sourceImageUrl });
-    }
-    updateNodeStatus(
-      selectedNode.id,
-      "queued",
-      isImageEditRun
-        ? "Image edit brief submitted. Reading the saved edit canvas..."
-        : "Job submitted. Waiting for the external API...",
-      displayModel
-    );
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ modelId: selectedModelId, projectId, input: { ...mediaInput, projectId } })
-    });
-    const job = (await response.json()) as JobRecord & { hint?: string };
-    if (!response.ok) {
-      updateNodeStatus(selectedNode.id, "failed", errorMessage(job, "External API failed."), displayModel);
-      return;
-    }
-    setJobs((current) => [job, ...current]);
-    if (job.status === "succeeded") {
-      if (job.assets?.length) {
-        setAssets((current) => [...job.assets!, ...current]);
-        applyAssetToNode(selectedNode.id, job.assets[0] as Asset);
+      if (kind === "voice" || kind === "export") {
+        updateNodeStatus(selectedNode.id, "failed", "Only script, image, and video API categories are configured.", displayModel);
+        return;
       }
-      updateNodeStatus(selectedNode.id, "succeeded", "Generation completed. Result added to assets.", displayModel);
-      return;
+
+      const endpoint = kind === "video" ? "/api/video/generate" : "/api/image/generate";
+      const mediaInput =
+        kind === "video"
+          ? {
+              prompt: nodeInput,
+              imageUrl: sourceImageUrl,
+              ratio: selectedNode.data.ratio ?? "9:16",
+              duration: selectedNode.data.duration ?? 5,
+              camera: selectedNode.data.camera ?? "slow push-in",
+              variants: selectedNode.data.variants ?? 1
+            }
+          : {
+              prompt: nodeInput,
+              ...(isImageEditRun
+                ? {
+                    imageUrl: selectedNode.data.imageEditReferenceUrl || selectedNode.data.assetUrl,
+                    editMode: true
+                  }
+                : {})
+            };
+      if (kind === "video" && sourceImageUrl && selectedNode.data.sourceAssetUrl !== sourceImageUrl) {
+        updateNodeData(selectedNode.id, { sourceAssetUrl: sourceImageUrl });
+      }
+      updateNodeStatus(
+        selectedNode.id,
+        "queued",
+        isImageEditRun
+          ? "Image edit brief submitted. Reading the saved edit canvas..."
+          : "Job submitted. Waiting for the external API...",
+        displayModel
+      );
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelId: selectedModelId, projectId, input: { ...mediaInput, projectId } })
+      });
+      const job = await readJsonResponse<JobRecord & { hint?: string }>(response);
+      if (!response.ok) {
+        updateNodeStatus(selectedNode.id, "failed", errorMessage(job, "External API failed."), displayModel);
+        return;
+      }
+      setJobs((current) => [job, ...current]);
+      if (job.status === "succeeded") {
+        if (job.assets?.length) {
+          setAssets((current) => [...job.assets!, ...current]);
+          applyAssetToNode(selectedNode.id, job.assets[0] as Asset);
+        }
+        updateNodeStatus(selectedNode.id, "succeeded", "Generation completed. Result added to assets.", displayModel);
+        return;
+      }
+      pollJob(job, selectedNode.id);
+    } catch (error) {
+      updateNodeStatus(
+        selectedNode.id,
+        "failed",
+        error instanceof Error ? error.message : String(error),
+        displayModel
+      );
     }
-    pollJob(job, selectedNode.id);
   }, [applyAssetToNode, models, pollJob, projectId, prompt, selectedModelId, selectedNode, sourceImageUrl, updateNodeData, updateNodeStatus, upstreamText]);
 
   return (
