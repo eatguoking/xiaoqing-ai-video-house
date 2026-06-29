@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Project {
-  id          String   @id
+  id          String   @id @default(uuid())
   name        String
   nodesJson   String   @default("[]")
   edgesJson   String   @default("[]")
@@ -18,7 +18,7 @@ model Project {
 }
 
 model Asset {
-  id          String   @id
+  id          String   @id @default(uuid())
   projectId   String?
   type        String
   title       String
@@ -29,7 +29,7 @@ model Asset {
 }
 
 model GenerationJob {
-  id          String   @id
+  id          String   @id @default(uuid())
   projectId   String?
   kind        String
   provider    String
@@ -43,7 +43,7 @@ model GenerationJob {
 }
 
 model ApiLog {
-  id           String   @id
+  id           String   @id @default(uuid())
   projectId    String?
   capability   String
   provider     String
@@ -59,7 +59,7 @@ model ApiLog {
 }
 
 model PromptTemplate {
-  id        String   @id
+  id        String   @id @default(uuid())
   projectId String?
   scope     String   @default("project")
   kind      String
@@ -78,7 +78,7 @@ model ApiCredential {
 }
 
 model ModelCredential {
-  id         String   @id
+  id         String   @id @default(uuid())
   capability String
   label      String
   provider   String

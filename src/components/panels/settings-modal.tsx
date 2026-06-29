@@ -425,16 +425,34 @@ export function SettingsModal({ open, locale, onClose, onChanged }: Props) {
 
     setTesting(true);
     setTestResult(null);
-    const response = await fetch("/api/settings/model-credentials/test", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: editor.id, mode, prompt: testPrompt })
-    });
-    const result = await response.json();
-    setTesting(false);
-    setTestResult(result);
-    if (mode === "models" && result.ok) {
-      onChanged?.();
+    const startedAt = Date.now();
+    try {
+      const response = await fetch("/api/settings/model-credentials/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editor.id, mode, prompt: testPrompt })
+      });
+      const result = await response.json().catch(() => ({
+        ok: false,
+        status: response.status,
+        statusText: response.statusText || "INVALID_RESPONSE",
+        elapsedMs: Date.now() - startedAt,
+        preview: "The API test endpoint returned a non-JSON response."
+      }));
+      setTestResult(result);
+      if (mode === "models" && result.ok) {
+        onChanged?.();
+      }
+    } catch (error) {
+      setTestResult({
+        ok: false,
+        status: 0,
+        statusText: "REQUEST_FAILED",
+        elapsedMs: Date.now() - startedAt,
+        preview: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setTesting(false);
     }
   };
 

@@ -2,11 +2,35 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getJob } from "@/lib/jobs/job-store";
 
+function parseAssets(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
   const { jobId } = await params;
+  const storedJob = await prisma.generationJob.findUnique({ where: { id: jobId } });
+
+  if (storedJob) {
+    return NextResponse.json({
+      id: storedJob.id,
+      kind: storedJob.kind,
+      provider: storedJob.provider,
+      model: storedJob.model,
+      prompt: storedJob.prompt,
+      status: storedJob.status,
+      assets: parseAssets(storedJob.assetsJson),
+      completedAt: storedJob.completedAt
+    });
+  }
+
   const job = getJob(jobId);
 
   if (!job) {

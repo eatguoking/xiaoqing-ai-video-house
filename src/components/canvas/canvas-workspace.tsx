@@ -895,14 +895,30 @@ type StoryboardRow = {
 };
 
 function parseStoryboardRows(text: string): StoryboardRow[] {
+  const isStoryboardHeader = (line: string) => {
+    if (!line.includes("|")) return false;
+    const cells = line
+      .replace(/^\|+|\|+$/g, "")
+      .split("|")
+      .map((cell) => cell.trim().toLowerCase());
+
+    return (
+      cells.length >= 4 &&
+      cells[0] === "shot" &&
+      cells.some((cell) => cell === "visual") &&
+      cells.some((cell) => cell === "dialogue") &&
+      cells.some((cell) => cell === "camera")
+    );
+  };
+
   const lines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => !/^[-|:\s]+$/.test(line));
+    .filter((line) => !/^[-|:\s]+$/.test(line))
+    .filter((line) => !isStoryboardHeader(line));
 
   const rows = lines
-    .filter((line) => !/shot|visual|dialogue|camera|prompt|duration/i.test(line) || !line.includes("|"))
     .map((line, index) => {
       const cells = line
         .replace(/^\|+|\|+$/g, "")
