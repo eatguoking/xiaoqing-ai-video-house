@@ -2817,7 +2817,7 @@ export function CanvasWorkspace() {
           if (!selectedNode) return;
           rows
             .filter((row) => row.prompt || row.visual)
-            .slice(0, 20)
+            .slice(0, 40)
             .forEach((row, index) => {
               createWorkflowNode(
                 "image",

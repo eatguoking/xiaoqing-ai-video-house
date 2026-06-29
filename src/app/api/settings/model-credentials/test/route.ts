@@ -108,7 +108,7 @@ export async function POST(request: Request) {
             elapsedMs: Date.now() - startedAt,
             preview: "Generation tests need a fallback model or a synced model selection."
           },
-          { status: 200 }
+          { status: 400 }
         );
       }
 

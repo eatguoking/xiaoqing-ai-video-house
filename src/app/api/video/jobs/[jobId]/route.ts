@@ -4,6 +4,7 @@ import { readStringByPath } from "@/lib/api/response-path";
 import { getJob } from "@/lib/jobs/job-store";
 
 type JsonRecord = Record<string, unknown>;
+const VIDEO_JOB_TIMEOUT_MS = 10 * 60 * 1000;
 
 function makeUrl(baseUrl: string, path: string) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -234,6 +235,7 @@ export async function GET(
   const credentialId = stringValue(parsed.meta.credentialId);
   const externalJobId = stringValue(parsed.meta.externalJobId);
   const selected = await prisma.modelCredential.findUnique({ where: { id: credentialId } });
+  const elapsedMs = Date.now() - storedJob.createdAt.getTime();
 
   if (!selected || !selected.baseUrl || !selected.enabled) {
     return NextResponse.json({
@@ -245,6 +247,23 @@ export async function GET(
       status: "failed",
       assets: parsed.assets,
       error: "The video API configuration used by this job is missing or disabled."
+    });
+  }
+
+  if (elapsedMs > VIDEO_JOB_TIMEOUT_MS) {
+    await prisma.generationJob.update({
+      where: { id: storedJob.id },
+      data: { status: "failed", completedAt: new Date() }
+    });
+    return NextResponse.json({
+      id: storedJob.id,
+      kind: "video",
+      provider: storedJob.provider,
+      model: storedJob.model,
+      prompt: storedJob.prompt,
+      status: "failed",
+      assets: parsed.assets,
+      error: "External video job timed out after 10 minutes."
     });
   }
 

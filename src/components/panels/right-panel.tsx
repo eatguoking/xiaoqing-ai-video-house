@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Node } from "@xyflow/react";
 import { ArrowRight, Copy, Images, ListPlus, Paintbrush, RefreshCw, Search, Trash2, Wand2 } from "lucide-react";
 import type { GenerationNodeData } from "@/components/nodes/generation-node";
@@ -182,6 +182,7 @@ export function RightPanel({
   const t = labels[locale];
   const [modelQuery, setModelQuery] = useState("");
   const data = selectedNode?.data;
+  const selectedNodeId = selectedNode?.id;
   const options = getOptions(data?.kind, models);
   const selectedModel = options.find((model) => model.id === selectedModelId);
   const requiresModel =
@@ -211,6 +212,10 @@ export function RightPanel({
   }, [modelQuery, options]);
 
   const grouped = groupBySource(filteredOptions);
+
+  useEffect(() => {
+    setModelQuery("");
+  }, [selectedNodeId, data?.kind]);
 
   return (
     <aside className="right-panel">
