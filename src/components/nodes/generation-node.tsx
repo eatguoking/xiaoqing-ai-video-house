@@ -30,6 +30,8 @@ export type GenerationNodeData = {
   language?: string;
   temperature?: number;
   skillId?: string;
+  skillIds?: string[];
+  autoSkillEnabled?: boolean;
   onQuickAdd?: (kind: GenerationNodeData["kind"]) => void;
 };
 

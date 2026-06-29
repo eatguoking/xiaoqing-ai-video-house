@@ -74,6 +74,9 @@ const labels = {
     noSelected: "未选择模型",
     skill: "Skill",
     noSkill: "不使用 Skill",
+    autoSkill: "自动识别",
+    manualSkills: "手动选择",
+    skillHint: "生成时会先应用手动 Skill，再按节点内容自动补充匹配 Skill。",
     manageSkills: "管理 Skill",
     aiInput: "AI 输入 / 在这里输入需求",
     aiInputHelp: "例如：要生成的剧情、画面、风格、镜头运动或视频要求。",
@@ -125,6 +128,9 @@ const labels = {
     noSelected: "No model selected",
     skill: "Skill",
     noSkill: "No Skill",
+    autoSkill: "Auto detect",
+    manualSkills: "Manual skills",
+    skillHint: "Generation applies manual skills first, then adds matched skills from node content.",
     manageSkills: "Manage Skills",
     aiInput: "AI Input / enter requirements here",
     aiInputHelp: "For example: plot, image, style, camera movement, or video requirements.",
@@ -223,6 +229,7 @@ export function RightPanel({
   const applicableSkills = skills.filter((skill) =>
     skill.enabled && data?.kind && (skill.appliesTo.includes("all") || skill.appliesTo.includes(data.kind))
   );
+  const selectedSkillIds = data?.skillIds ?? (data?.skillId ? [data.skillId] : []);
   const selectedModel = options.find((model) => model.id === selectedModelId);
   const requiresModel =
     data?.kind === "script" ||
@@ -457,18 +464,45 @@ export function RightPanel({
             {t.manageSkills}
           </button>
         </div>
-        <label className="field">
-          <select
-            value={data?.skillId ?? ""}
-            onChange={(event) => onNodeDataChange({ skillId: event.target.value || undefined })}
+        <label className="toggle-field compact-toggle">
+          <input
+            type="checkbox"
+            checked={data?.autoSkillEnabled !== false}
+            onChange={(event) => onNodeDataChange({ autoSkillEnabled: event.target.checked })}
             disabled={!selectedNode}
-          >
-            <option value="">{t.noSkill}</option>
-            {applicableSkills.map((skill) => (
-              <option key={skill.id} value={skill.id}>{skill.name}</option>
-            ))}
-          </select>
+          />
+          {t.autoSkill}
         </label>
+        <div className="field">
+          <span>{t.manualSkills}</span>
+          <div className="skill-multi-list">
+            {applicableSkills.length === 0 ? <small className="empty-text">{t.noSkill}</small> : null}
+            {applicableSkills.map((skill) => {
+              const checked = selectedSkillIds.includes(skill.id);
+              return (
+                <label key={skill.id} className={checked ? "skill-check is-active" : "skill-check"}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={!selectedNode}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                        ? [...selectedSkillIds, skill.id]
+                        : selectedSkillIds.filter((id) => id !== skill.id);
+                      onNodeDataChange({
+                        skillIds: Array.from(new Set(next)),
+                        skillId: next[0]
+                      });
+                    }}
+                  />
+                  <span>{skill.name}</span>
+                  <small>{skill.tags.slice(0, 3).join(" ")}</small>
+                </label>
+              );
+            })}
+          </div>
+          <small className="field-help">{t.skillHint}</small>
+        </div>
       </section>
 
       <section className="inspector-section ai-input-section">

@@ -723,6 +723,45 @@ body[data-theme="dark"] .react-flow__controls-button {
   overflow: auto;
 }
 
+.skill-import-zone {
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  border: 1px dashed rgba(0, 122, 255, 0.36);
+  border-radius: 14px;
+  padding: 14px 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-2) 76%, rgba(0, 122, 255, 0.12));
+  text-align: center;
+}
+
+.skill-import-zone.is-dragging {
+  border-color: rgba(0, 122, 255, 0.86);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.12);
+}
+
+.skill-import-zone span,
+.skill-import-message {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.skill-import-zone label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.skill-import-zone input {
+  display: none;
+}
+
 .skill-card {
   display: grid;
   gap: 4px;
@@ -771,6 +810,52 @@ body[data-theme="dark"] .react-flow__controls-button {
   padding: 8px 12px;
   color: var(--text);
   background: var(--surface-2);
+}
+
+.skill-kind-grid,
+.skill-multi-list {
+  display: grid;
+  gap: 8px;
+}
+
+.skill-kind-grid {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
+.skill-kind-chip,
+.skill-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.skill-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.skill-check input {
+  grid-row: span 2;
+}
+
+.skill-check small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.skill-kind-chip:has(input:checked),
+.skill-check.is-active {
+  border-color: rgba(0, 122, 255, 0.58);
+  background: color-mix(in srgb, var(--surface-2) 72%, rgba(0, 122, 255, 0.16));
+}
+
+.compact-toggle {
+  margin: 0 0 10px;
 }
 
 .pipeline-highlight {

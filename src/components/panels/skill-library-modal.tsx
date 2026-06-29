@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Copy, Plus, Save, Trash2, X } from "lucide-react";
+import { useMemo, useState, type DragEvent } from "react";
+import { Copy, FileArchive, Plus, Save, Trash2, UploadCloud, X } from "lucide-react";
 import type { GenerationNodeData } from "@/components/nodes/generation-node";
 import type { Locale } from "@/components/canvas/canvas-workspace";
+import { importSkillsFromFiles } from "@/components/panels/skill-import";
 
 export type SkillRecord = {
   id: string;
@@ -40,7 +41,14 @@ const labels = {
     promptTemplate: "用户提示词包装模板",
     outputFormat: "输出格式要求",
     empty: "还没有 Skill。",
-    all: "全部"
+    all: "全部",
+    importTitle: "拖入 Skill 文件或 ZIP",
+    importHint: "支持 JSON、Markdown、TXT、Prompt、SKILL.md 和 ZIP 压缩包。",
+    importButton: "选择文件",
+    importDone: "已导入 {count} 个 Skill。",
+    importEmpty: "没有发现可导入的 Skill。",
+    importFailed: "部分文件导入失败：",
+    multiApplyHint: "可多选适用节点，自动识别会按节点类型和标签匹配。"
   },
   en: {
     title: "Skill Library",
@@ -57,11 +65,18 @@ const labels = {
     promptTemplate: "User prompt wrapper",
     outputFormat: "Output format",
     empty: "No skills yet.",
-    all: "All"
+    all: "All",
+    importTitle: "Drop Skill files or ZIP",
+    importHint: "Supports JSON, Markdown, TXT, Prompt, SKILL.md, and ZIP archives.",
+    importButton: "Choose files",
+    importDone: "Imported {count} skills.",
+    importEmpty: "No importable skills found.",
+    importFailed: "Some files failed to import:",
+    multiApplyHint: "Select multiple node types; auto detect matches by node type and tags."
   }
 } as const;
 
-const kinds: Array<GenerationNodeData["kind"] | "all"> = ["all", "script", "storyboard", "character", "image", "video"];
+const kinds: Array<GenerationNodeData["kind"] | "all"> = ["all", "script", "storyboard", "character", "image", "video", "voice", "export"];
 
 export const defaultSkills: SkillRecord[] = [
   {
@@ -132,6 +147,8 @@ function newSkill(): SkillRecord {
 export function SkillLibraryModal({ open, locale, skills, onClose, onChange }: Props) {
   const t = labels[locale];
   const [activeId, setActiveId] = useState(skills[0]?.id ?? "");
+  const [isDragging, setIsDragging] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
   const active = useMemo(() => skills.find((skill) => skill.id === activeId) ?? skills[0], [activeId, skills]);
 
   if (!open) return null;
@@ -161,6 +178,42 @@ export function SkillLibraryModal({ open, locale, skills, onClose, onChange }: P
     setActiveId(next[0]?.id ?? "");
   };
 
+  const importFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+    const result = await importSkillsFromFiles(fileArray);
+    if (result.skills.length > 0) {
+      onChange([...result.skills, ...skills]);
+      setActiveId(result.skills[0].id);
+    }
+    const messages = [
+      result.skills.length > 0 ? t.importDone.replace("{count}", String(result.skills.length)) : t.importEmpty,
+      result.errors.length > 0 ? `${t.importFailed} ${result.errors.join(" / ")}` : ""
+    ].filter(Boolean);
+    setImportMessage(messages.join(" "));
+  };
+
+  const onDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    importFiles(event.dataTransfer.files).catch((error) => {
+      setImportMessage(error instanceof Error ? error.message : String(error));
+    });
+  };
+
+  const toggleApplyKind = (kind: GenerationNodeData["kind"] | "all") => {
+    if (!active) return;
+    if (kind === "all") {
+      updateActive({ appliesTo: ["all"] });
+      return;
+    }
+    const withoutAll = active.appliesTo.filter((item) => item !== "all");
+    const next = withoutAll.includes(kind)
+      ? withoutAll.filter((item) => item !== kind)
+      : [...withoutAll, kind];
+    updateActive({ appliesTo: next.length > 0 ? next : ["all"] });
+  };
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="skill-modal" role="dialog" aria-modal="true" aria-label={t.title}>
@@ -175,6 +228,37 @@ export function SkillLibraryModal({ open, locale, skills, onClose, onChange }: P
         </header>
         <div className="skill-modal-body">
           <aside className="skill-list">
+            <div
+              className={isDragging ? "skill-import-zone is-dragging" : "skill-import-zone"}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={onDrop}
+            >
+              <UploadCloud size={20} />
+              <strong>{t.importTitle}</strong>
+              <span>{t.importHint}</span>
+              <label>
+                <FileArchive size={14} />
+                {t.importButton}
+                <input
+                  type="file"
+                  multiple
+                  accept=".json,.md,.markdown,.txt,.prompt,.zip"
+                  onChange={(event) => {
+                    if (event.target.files) {
+                      importFiles(event.target.files).catch((error) => {
+                        setImportMessage(error instanceof Error ? error.message : String(error));
+                      });
+                      event.currentTarget.value = "";
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            {importMessage ? <small className="skill-import-message">{importMessage}</small> : null}
             <button className="primary-action" type="button" onClick={addSkill}>
               <Plus size={16} />
               {t.newSkill}
@@ -210,12 +294,19 @@ export function SkillLibraryModal({ open, locale, skills, onClose, onChange }: P
               </label>
               <label className="field">
                 <span>{t.appliesTo}</span>
-                <select
-                  value={active.appliesTo[0] ?? "all"}
-                  onChange={(event) => updateActive({ appliesTo: [event.target.value as SkillRecord["appliesTo"][number]] })}
-                >
-                  {kinds.map((kind) => <option key={kind} value={kind}>{kind === "all" ? t.all : kind}</option>)}
-                </select>
+                <div className="skill-kind-grid">
+                  {kinds.map((kind) => (
+                    <label key={kind} className="skill-kind-chip">
+                      <input
+                        type="checkbox"
+                        checked={active.appliesTo.includes(kind)}
+                        onChange={() => toggleApplyKind(kind)}
+                      />
+                      {kind === "all" ? t.all : kind}
+                    </label>
+                  ))}
+                </div>
+                <small className="field-help">{t.multiApplyHint}</small>
               </label>
               <label className="field">
                 <span>{t.tags}</span>

@@ -42,6 +42,7 @@ import { LeftPanel, type NodeKind } from "@/components/panels/left-panel";
 import { RightPanel } from "@/components/panels/right-panel";
 import { SettingsModal } from "@/components/panels/settings-modal";
 import { SkillLibraryModal, defaultSkills, type SkillRecord } from "@/components/panels/skill-library-modal";
+import { selectSkillsForNode } from "@/components/panels/skill-import";
 
 const appName = "\u5c0f\u6674\u7684AI\u5f71\u89c6\u5999\u5999\u5c4b";
 export type Locale = "zh" | "en";
@@ -1082,19 +1083,22 @@ async function readJsonResponse<T extends Record<string, unknown>>(response: Res
   }
 }
 
-function applySkillToInput(input: string, nodeKind: GenerationNodeData["kind"], skill?: SkillRecord) {
-  if (!skill || !skill.enabled) return input;
-  if (!skill.appliesTo.includes("all") && !skill.appliesTo.includes(nodeKind)) return input;
+function applySkillsToInput(input: string, nodeKind: GenerationNodeData["kind"], selectedSkills: SkillRecord[]) {
+  return selectedSkills.reduce((currentInput, skill) => {
+    if (!skill.enabled) return currentInput;
+    if (!skill.appliesTo.includes("all") && !skill.appliesTo.includes(nodeKind)) return currentInput;
 
-  const wrapped = skill.promptTemplate?.trim()
-    ? skill.promptTemplate.replaceAll("{{input}}", input)
-    : input;
+    const wrapped = skill.promptTemplate?.trim()
+      ? skill.promptTemplate.replaceAll("{{input}}", currentInput)
+      : currentInput;
 
-  return [
-    skill.systemPrompt ? `[Skill System]\n${skill.systemPrompt}` : "",
-    wrapped,
-    skill.outputFormat ? `[Output Format]\n${skill.outputFormat}` : ""
-  ].filter(Boolean).join("\n\n");
+    return [
+      `[Skill: ${skill.name}]`,
+      skill.systemPrompt ? `[Skill System]\n${skill.systemPrompt}` : "",
+      wrapped,
+      skill.outputFormat ? `[Output Format]\n${skill.outputFormat}` : ""
+    ].filter(Boolean).join("\n\n");
+  }, input);
 }
 
 export function CanvasWorkspace() {
@@ -2580,8 +2584,15 @@ export function CanvasWorkspace() {
     }
 
     const displayModel = `${selectedModel.sourceName} / ${selectedModel.model}`;
-    const selectedSkill = skills.find((skill) => skill.id === selectedNode.data.skillId);
-    const skilledInput = applySkillToInput(nodeInput, kind, selectedSkill);
+    const selectedSkillIds = selectedNode.data.skillIds ?? (selectedNode.data.skillId ? [selectedNode.data.skillId] : []);
+    const selectedSkills = selectSkillsForNode(
+      skills,
+      kind,
+      nodeInput,
+      selectedSkillIds,
+      selectedNode.data.autoSkillEnabled !== false
+    );
+    const skilledInput = applySkillsToInput(nodeInput, kind, selectedSkills);
 
     try {
       if (kind === "script" || kind === "storyboard" || kind === "character") {
